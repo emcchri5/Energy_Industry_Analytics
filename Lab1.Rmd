@@ -1,29 +1,98 @@
 ---
 title: "Lab 1"
-output: html_document
+author: "Ethan McChristian, Mitchell Tyse"
+date: "1/25/2022"
+output: word_document
 ---
 
 ```{r setup, include=FALSE}
+install.packages(knitr)
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+```{r packages}
 if (!require("pacman")) install.packages(pacman)
-p_load(tidyverse)
+p_load(tidyverse, usethis, ggmap)
 ```
 
-## R Markdown
-
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
-
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
-
-```{r cars}
-summary(cars)
+```{r}
+install.packages("tidyverse")
 ```
 
-## Including Plots
-
-You can also embed plots, for example:
-
-```{r pressure, echo=FALSE}
-plot(pressure)
+```{r}
+library(tidyverse)
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+```{r}
+oil_fields = data.frame(read_csv("http://jmaurit.github.io/analytics/labs/data/oil_fields_cross.csv"))
+oil_fields
+```
+
+```{r}
+str(oil_fields)
+head(oil_fields$recoverable_oil)
+class(oil_fields$name)
+```
+
+```{r}
+oil_fields %>% ggplot(aes(x = producing_from, y = recoverable_oil)) + 
+  geom_point() + 
+  labs(x = "Year", y = "Recoverable Oil, Million SM3")
+```
+
+```{r}
+ggplot(oil_fields, aes(x=recoverable_oil)) +
+geom_histogram()
+```
+
+```{r}
+oil_fields$extracted = oil_fields$recoverable_oil - oil_fields$remaining_oil
+oil_fields$invest_per_millsm3 = oil_fields$total.invest / oil_fields$extracted
+```
+
+```{r}
+ggplot(oil_fields, aes(x = recoverable_oil, y = invest_per_millsm3)) + 
+  geom_point()
+```
+
+```{r}
+ggplot(oil_fields, aes(x = producing_from, y = log(invest_per_millsm3))) + 
+  geom_point()
+```
+Exercises:
+
+1) What does the special tax treatment imply about the initial investment costs of Norwegian offshore oil and gas investments?
+
+2) Who is in effect paying for most of the upfront investment costs? Is this warranted/problematic?
+
+3) If we know that there was a high risk that oil and gas production would not be profitable (or allowed) in the near future (10-30 years), would the tax system be neutral?
+
+```{r}
+big_oil_fields = oil_fields %>% filter(recoverable_oil > 50)
+big_oil_fields$name
+big_oil_fields = arrange(big_oil_fields, desc(recoverable_oil))
+big_oil_fields
+```
+
+```{r}
+ggplot(big_oil_fields, aes(x=reorder(name, -recoverable_oil), y=recoverable_oil)) +
+  geom_col() +
+  theme(axis.text.x = element_text(angle = 90)) +
+  labs(x="", y="Recoverable Oil, SM3")
+```
+
+```{r}
+maps_api_key = '***'
+register_google(key = maps_api_key)
+```
+
+```{r}
+northsea=get_googlemap(center = c(lon = 2.74, lat = 59.00), zoom=5, maptype="satellite")
+```
+
+```{r}
+ggmap(northsea) +
+geom_point(aes(x = lon, y = lat, size=recoverable_oil, color=extracted),alpha=.7, data = oil_fields)+
+scale_color_continuous(low="red", high="black")
+```

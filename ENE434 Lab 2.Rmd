@@ -1,0 +1,205 @@
+---
+title: "ENE 434 Lab 2"
+author: "Ethan McChristian & Mitchell Tyse"
+date: "02.16.2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r packages}
+if(!require('pacman')) install.packages('pacman')
+p_load(tidyverse,zoo,lubridate)
+```
+
+```{r}
+adf  =  read_csv("https://jmaurit.github.io/anvendt_macro/data/adf.csv")
+```
+
+```{r}
+adf = adf[-1]
+```
+
+```{r}
+new_names = c("working_capital", "working_capital_perc", "fixed_assets", "long_debt", "NACE_desc", "NACE_code", "profit", "other_fin_instr", "employees", "depreciation", "change_inventories", "operating_income", "operating_costs", "operating_result", "equity", "total_assets", "org_type", "principality", "debt", "inv", "cash", "municipality", "corp_accounts", "short_debt", "accounts_receivable", "director", "liquidity", "wage_costs", "profitability", "current_assets", "pretax_profit", "orgnr", "audit_remarks", "audit_komments", "audit_explanation_txt", "audit_explanation", "sales_revenue", "solidity", "status", "founded_date", "dividend", "currency_code", "supply_cost", "inventory", "year", "name")
+```
+
+```{r}
+colnames(adf) = new_names
+names(adf)
+```
+
+```{r}
+adf <- adf %>%
+  mutate(NACE_code = as.character(NACE_code))
+adf <- adf %>% 
+  separate(NACE_code, into=c("NACE1", "NACE2"), sep="\\.", remove=FALSE)
+adf[c("NACE1", "NACE2")]
+```
+```{r}
+adf = adf %>% filter(year!=2016)  %>%  filter(NACE1!="0")
+```
+
+```{r}
+sum_adf = adf %>% group_by(NACE1, year) %>% 
+  summarise(
+    total_income = sum(operating_income, na.rm=TRUE),
+    total_result = sum(operating_result, na.rm=TRUE),
+    total_costs = sum(operating_costs, na.rm=TRUE),
+    total_wages = sum(wage_costs, na.rm=TRUE)
+  )
+sum_adf
+```
+```{r}
+sum_adf15 = filter(sum_adf, year==2015)
+sum_adf15_long = sum_adf15 %>% pivot_longer(cols = total_income:total_wages, names_to="variabel", values_to="value")
+sum_adf15_long
+```
+
+```{r}
+income15 = filter(sum_adf15_long, variabel == "total_income" )
+ggplot(income15, aes(x = reorder(NACE1, -value), y = value)) +
+  geom_col()
+```
+```{r}
+sum_adf15_long %>%
+  ggplot(aes(x=reorder(NACE1,-value), y=value)) +
+  geom_col() +
+  facet_wrap(~variabel, ncol=2, scales="free") +
+  theme(axis.text.x=element_blank(), 
+        axis.ticks.x=element_blank()) +
+  xlab("")
+```
+```{r}
+arrange(income15, desc(value))$NACE1[1:10]
+result15 = filter(sum_adf15_long, variabel == "total_result")
+top4_res = arrange(result15, desc(value))$NACE1[1:4]
+print(top4_res)
+```
+
+```{r}
+topp4_data = filter(sum_adf, NACE1 %in% top4_res)
+
+ggplot(topp4_data, aes(x=year, y=total_result)) +
+  geom_line() +
+  facet_wrap(~NACE1, scales="free")
+```
+##Assignment 
+1)
+```{r}
+adf_filtered <- adf %>%
+  filter(NACE1 != 6)
+adf_filtered
+```
+2)
+```{r}
+adf_filtered <- adf_filtered %>%
+  filter(org_type %in% c("AS", "ASA"))
+adf_filtered
+```
+3)
+```{r}
+adf_filtered_sum <- adf_filtered %>%
+  group_by(year) %>%
+  summarise(
+    total_profit = sum(profit, na.rm = TRUE),
+    total_revenue = sum(sales_revenue, na.rm = TRUE),
+    total_liquidity = sum(liquidity, na.rm = TRUE)
+  )
+```
+4)
+```{r}
+ggplot(data = adf_filtered_sum,
+       mapping = aes(x = year, y = total_profit)) +
+  geom_line()
+ggplot(data = adf_filtered_sum,
+       mapping = aes(x = year, y = total_revenue)) +
+  geom_line()
+ggplot(data = adf_filtered_sum,
+       mapping = aes(x = year, y = total_liquidity)) +
+  geom_line()
+```
+5)
+```{r}
+adf_margins <- adf_filtered %>%
+  mutate(profit_margin = profit/operating_income) %>%
+  arrange(desc(profit_margin))
+adf_margins <- adf_margins %>%
+  filter(profit_margin != Inf) %>%
+  head(200)
+adf_margins
+adf_margins <- adf_margins %>%
+  mutate(firmsize = employees/max(employees)*80) #making a firm size proxy that is the same scale as profit_margin
+
+ggplot(data = adf_margins) +
+  geom_col(mapping = aes(x=reorder(orgnr,-profit_margin), y = profit_margin)) +
+  geom_point(mapping = aes(x = reorder(orgnr, -profit_margin), y = firmsize), alpha = .5) +
+  theme(axis.text.x=element_blank(), 
+        axis.ticks.x=element_blank()) +
+  xlab("")
+```
+#I don't see any relationship
+6)
+```{r}
+adf %>% 
+  filter(NACE1 == 6) %>%
+  filter(!is.na(profit)) %>%
+  filter(!is.na(operating_income)) %>%
+  mutate(profit_margin = profit/operating_income) %>%
+  group_by(year) %>%
+  summarise(
+    sum_profit = sum(profit,na.rm = TRUE),
+    sum_operating_income = sum(operating_income, na.rm = TRUE)
+  ) %>%
+  mutate(profit_margin = sum_profit/sum_operating_income) %>%
+  ggplot(mapping = aes(x = year, y = profit_margin)) +
+  geom_line()
+```
+
+7)
+```{r}
+adf_debt <- adf %>%
+  filter(NACE1 == 6) %>%
+  mutate(long_debt_last_year = lag(long_debt, 1L)) %>%
+  mutate(debt_taken_on = long_debt - long_debt_last_year) %>%
+  filter(year >= 2010)
+adf_debt %>% 
+  group_by(year) %>%
+  summarise(
+    sum_profit = sum(profit,na.rm = TRUE),
+    sum_operating_income = sum(operating_income, na.rm = TRUE),
+    sum_new_debt = sum(debt_taken_on, na.rm = TRUE)
+  ) %>%
+  ggplot(mapping = aes(x = year, y = sum_new_debt)) +
+  geom_line() +
+  geom_line(mapping = aes(x = year, y = sum_profit), alpha = .5, color = 'red')
+adf_debt %>%
+  group_by(year, orgnr) %>%
+  mutate(orgnr = as.character(orgnr)) %>%
+  summarise(
+    sum_profit = sum(profit,na.rm = TRUE),
+    sum_operating_income = sum(operating_income, na.rm = TRUE),
+    sum_new_debt = sum(debt_taken_on, na.rm = TRUE)
+  ) %>%
+  arrange(desc(sum_new_debt)) %>%
+  ggplot(mapping = aes(x = year, y = sum_new_debt, color = orgnr)) +
+  geom_line(alpha = .5) +
+  theme(legend.position = 'none')
+adf_debt %>%
+  group_by(year, orgnr) %>%
+  mutate(orgnr = as.character(orgnr)) %>%
+  summarise(
+    sum_profit = sum(profit,na.rm = TRUE),
+    sum_operating_income = sum(operating_income, na.rm = TRUE),
+    sum_new_debt = sum(debt_taken_on, na.rm = TRUE)
+  ) %>%
+  arrange(desc(sum_new_debt)) %>%
+  ggplot(mapping = aes(x = year, y = sum_new_debt, color = orgnr)) +
+  geom_line(alpha = .5) +
+  theme(legend.position = 'none') +
+  scale_y_continuous(limit = c(-5.0*10^6, 5.0*10^6))
+```
+
+
