@@ -117,6 +117,7 @@ cons = cons %>% rows_delete(dupRow, by=c("period", "NO"))
 
 ###tsibble and preview
 ```{r}
+cons
 cons_ts = cons %>% select("NO1":"period") %>% tsibble(index=period)
 cons_ts %>% select(NO) %>% autoplot()
 ```

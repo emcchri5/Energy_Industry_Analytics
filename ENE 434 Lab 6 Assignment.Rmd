@@ -46,6 +46,10 @@ armax3 = power_ts %>% fill_gaps() %>% model(
   mod_ets_lagged = ARIMA(DK1 ~ ets_price + pdq(2,1,0) +
                 lag(ets_price) + lag(ets_price, 2) + lag(ets_price, 3)))
 glance(armax3) %>% arrange(AICc) #better fit!!
+armax2 = power_ts %>% fill_gaps() %>% model(
+  modWithEts = ARIMA(DK1 ~ ets_price + pdq(2,1,0)),
+  modWOutEts = ARIMA(DK1 ~ pdq(2,1,0))
+  )
 ```
 
 ```{r}
@@ -58,6 +62,8 @@ armax3 %>%
 ```
 
 ```{r}
+fcast3 = armax2 %>% select(modWithEts) %>% forecast(new_data=scen1)
+fcast4 = armax2 %>% select(modWithEts) %>% forecast(new_data=scen2)
 fcast5 = armax3 %>% select(mod_ets_lagged) %>% forecast(new_data=scen1)
 fcast6 = armax3 %>% select(mod_ets_lagged) %>% forecast(new_data=scen2)
 ```
@@ -71,32 +77,86 @@ fcast6 %>% autoplot(power_ts) #increasing carbon prices, lagged model
 
 ##Question 2
 From ENTSOE-E or statnett, download hourly consumption data for Norway for 2017 and 2018. Join this with the 2019 data in order to create one long time series for Norwegian consumption. Then model the seasonality in the data (at monthly, weakly and daily level), with fourier terms.
+###importing data
 ```{r}
-cons_2017 <- read_csv2('https://raw.githubusercontent.com/emcchri5/codebank/main/NO_Energy_Cons_2017.csv')
-cons_2018 <- read_csv2('https://raw.githubusercontent.com/emcchri5/codebank/main/NO_Energy_Cons_2018.csv')
-```
-
-```{r}
-p_load(tidyverse, lubridate)
+cons_2017 <- read_csv('https://raw.githubusercontent.com/emcchri5/codebank/main/NO_Energy_Cons_2017.csv')
+cons_2018 <- read_csv('https://raw.githubusercontent.com/emcchri5/codebank/main/NO_Energy_Cons_2018.csv')
 cons = read_csv2("http://jmaurit.github.io/analytics/labs/data/consumption-no-areas_2019_hourly.csv")
 ```
 
+###getting hour columns
 ```{r}
-cons <- cons %>% seperate(Hours, sep = '-', into=c('start','end'))
+cons_2017 <- cons_2017 %>%
+  separate('Time(Local)', sep = ' ', into=c('date','time','timezone')) %>%
+  separate(time, sep = ':', into=c('hour', 'minute', 'second'))
+cons_2018 <- cons_2018 %>%
+   separate('Time(Local)', sep = ' ', into=c('date','time','timezone')) %>%
+  separate(time, sep = ':', into=c('hour', 'minute', 'second'))
+cons <- cons %>% separate(Hours, sep = '-', into=c('start','end'))
+```
+
+###converting hour to numeric
+```{r}
+cons_2017 <- cons_2017 %>%
+  mutate(hour = as.numeric(hour))
+cons_2018 <- cons_2018 %>%
+  mutate(hour = as.numeric(hour))
+```
+
+###binding 2017 and 2018 data (easy part)
+```{r}
+cons_20178 <- rbind(cons_2017, cons_2018)
+cons_20178 <- cons_20178 %>%
+  select(date, hour, Consumption)
+cons_2019 <- cons %>% 
+  select(Date, start, NO)
+```
+
+###wrangling date values to be parallel
+```{r}
+cons_20178 <- cons_20178 %>%
+  rename('cons' = 'Consumption')
+cons_20178$date <- gsub('\\.', '/', cons_20178$date)
+cons_2019$time <- gsub('\\s+', '', cons$start)
+cons_2019$hour <- as.numeric(cons_2019$time)
+cons_2019 <- cons_2019 %>%
+  select(Date, hour, NO) %>%
+  rename('date' = 'Date', 'cons' = 'NO')
+```
+###binding datasets 2017/2018 and 2019, fixing data to tsibble
+```{r}
+cons_total <- rbind(cons_20178, cons_2019)
+
+cons_total["period"] = dmy_h(paste(cons_total$date, cons_total$hour))
+
+#check for NA's
+cons_total[!complete.cases(cons_total), ]
+#replace NA's
+cons_total[["cons"]][cons_total$period==as_datetime("2019-03-31 02:00:00")] = cons_total[["cons"]][cons_total$period==as_datetime("2019-03-31 01:00:00")]
+#check for duplicates
+duplicates(cons_total)
+#run this 3 times  until duplicates(cons_total is gone)
+dupRow = duplicates(cons_total)[2,]
+cons_total = cons_total %>% rows_delete(dupRow, by=c("period", 'cons'))
+duplicates(cons_total) #should be an empty 0x4 dataframe
+cons_total_ts <- cons_total %>%
+  tsibble(index=period) %>%
+  fill_gaps()
 ```
 
 ```{r}
-cons %>% select('Date', 'start', 'end', 'NO', 'period')
-cons_2017 
-#cons["Date"] = as.Date(cons$Date, format="%d/%m/%Y")
-cons_2017 = cons_2017 %>% separate('Time(Local)', sep=" ", into=c("date", "time"))
-cons_2017
-#we use lubridate to create a date-time columns
-p_load(lubridate)
-cons_2017["period"] = dmy_h(paste(cons_2017$date, cons_2017$time))
-#We have one missing value - I will fudge it and replace it with the previous hours value
-cons_2017
-cons
+smod3 = cons_total_ts %>% model(
+  fmod7 = ARIMA(cons ~ fourier(period = 24, K = 1) + fourier(period = 24*7, K = 1) + fourier(period = 24*30, K = 1) + fourier (period = 24*365, K=1) + PDQ(0,0,0))
+)
+glance(smod3)
 ```
 
+```{r}
+forecast <- smod3 %>%
+  forecast(h = 24*365)
+forecast %>% autoplot(cons_total_ts)
+```
+
+##Question 3
+Create a VAR model for consumption and prices in 2019 using Danish data (You can find it on ENTSOE_E or at the Danish TSO’s energy data site. Create a 30 day forecast. Load in actual data for january 2020–how does your forecast look? Include wind power in Denmark as a variable. How does this affect the model and forecast?
 
