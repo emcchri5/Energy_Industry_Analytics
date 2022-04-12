@@ -1,0 +1,179 @@
+---
+title: "ENE 434 Lab 1"
+author: "Ethan McChristian, Mitchell Tyse"
+date: "1/25/2022"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+options(repos = list(CRAN="http://cran.rstudio.com/"))
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+if (!require('pacman')) install.packages('pacman')
+p_load(tidyverse, ggmap, ggplot2, stats)
+```
+
+```{r}
+oil_fields = data.frame(read_csv("http://jmaurit.github.io/analytics/labs/data/oil_fields_cross.csv"))
+oil_fields
+```
+
+```{r}
+str(oil_fields)
+head(oil_fields$recoverable_oil)
+class(oil_fields$name)
+```
+```{r}
+oil_fields %>% ggplot(aes(x = producing_from, y = recoverable_oil)) + 
+  geom_point() + 
+  labs(x = "Year", y = "Recoverable Oil, Million SM3")
+```
+
+
+```{r}
+ggplot(oil_fields, aes(x=recoverable_oil)) +
+geom_histogram()
+```
+```{r}
+oil_fields$extracted = oil_fields$recoverable_oil - oil_fields$remaining_oil
+oil_fields$invest_per_millsm3 = oil_fields$total.invest / oil_fields$extracted
+```
+
+
+```{r}
+ggplot(oil_fields, aes(x = recoverable_oil, y = invest_per_millsm3)) + 
+  geom_point()
+```
+
+```{r}
+ggplot(oil_fields, aes(x = producing_from, y = log(invest_per_millsm3))) + 
+  geom_point()
+```
+Exercises:
+
+1) What does the special tax treatment imply about the initial investment costs of Norwegian offshore oil and gas investments?
+
+2) Who is in effect paying for most of the upfront investment costs? Is this warranted/problematic?
+
+3) If we know that there was a high risk that oil and gas production would not be profitable (or allowed) in the near future (10-30 years), would the tax system be neutral?
+
+```{r}
+big_oil_fields = oil_fields %>% filter(recoverable_oil > 50)
+big_oil_fields$name
+big_oil_fields = arrange(big_oil_fields, desc(recoverable_oil))
+big_oil_fields
+```
+
+```{r}
+ggplot(big_oil_fields, aes(x=reorder(name, -recoverable_oil), y=recoverable_oil)) +
+  geom_col() +
+  theme(axis.text.x = element_text(angle = 90)) +
+  labs(x="", y="Recoverable Oil, SM3")
+```
+
+```{r}
+library(ggmap)
+```
+
+```{r}
+maps_api_key <- Sys.getenv('GOOGLE_API_KEY')
+maps_api_key = Sys.getenv('GOOGLE_API_KEY')
+register_google(key = maps_api_key)
+```
+
+```{r}
+northsea=get_googlemap(center = c(lon = 2.74, lat = 59.00), zoom=5, maptype="satellite")
+```
+
+```{r maps}
+ggmap(northsea) +
+geom_point(aes(x = lon, y = lat, size=recoverable_oil, color=extracted),alpha=.7, data = oil_fields)+
+scale_color_continuous(low="red", high="black")
+```
+
+#Exercises 
+
+```{r}
+oil_fields
+```
+#1)
+```{r}
+oil_fields <- oil_fields %>%
+  mutate(invest_per_rec = total.invest/recoverable_oil)
+ggplot(oil_fields, mapping = aes(
+  x = producing_from, 
+  y = invest_per_rec)
+  ) +
+  geom_point()
+ggplot(oil_fields, mapping = aes(
+  x = recoverable_oil, 
+  y = invest_per_rec)
+  ) +
+  geom_point()
+```
+
+#2)
+```{r}
+oil_fields_arranged <- oil_fields %>%
+  arrange(by_group = invest_per_rec)
+threshold <- oil_fields_arranged[5,]$invest_per_rec
+threshold
+oil_fields %>%
+  filter(invest_per_rec<= threshold)
+```
+
+```{r}
+oil_fields
+```
+```{r}
+oil_fields_reg <- oil_fields %>%
+  filter(!is.na(invest_per_millsm3)) %>%
+  filter(!is.na(lat)) %>%
+  filter(invest_per_millsm3 != Inf)
+oil_fields_reg
+Northmodel <- lm(invest_per_millsm3 ~ lat, data = oil_fields_reg)
+summary(Northmodel)
+ggplot(data = oil_fields,
+       mapping = aes(
+         x = lat,
+         y = invest_per_millsm3
+       )) +
+  geom_point()
+```
+
+I don't think this hypothesis has much merit, latitude is not significantly correlated with invest_per_millsm3 and there isn't a clear relationship in the graph. 
+
+```{r}
+welbore <- read_csv(file = '/Users/EthanMcChristian/Downloads/wellbore_exploration_all.csv')
+```
+
+```{r}
+p_load(lubridate)
+wellbores <- welbore
+view(wellbores)
+```
+
+```{r}
+# Changing date variables to be in Date format
+wellbores$wlbCompletionDate = dmy(wellbores$wlbCompletionDate)
+wellbores$wlbEntryDate = dmy(wellbores$wlbEntryDate)
+wellbores$wlbReleasedDate = dmy(wellbores$wlbReleasedDate)
+wellbores$wlbPluggedDate = dmy(wellbores$wlbPluggedDate)
+wellbores$wlbPluggedAbandonDate = dmy(wellbores$wlbPluggedAbandonDate)
+wellbores$datesyncNPD = dmy(wellbores$datesyncNPD)
+wellbores$wlbDateReclass = dmy(wellbores$wlbDateReclass)
+wellbores$wlbDateUpdated = dmy(wellbores$wlbDateUpdated)
+wellbores$wlbDateUpdatedMax = dmy(wellbores$wlbDateUpdatedMax)
+```
+
+```{r}
+ggplot(data = wellbores,
+       mapping = aes(
+         x = wlbEntryDate, y = wlbTotalDepth, color = wlbContent
+       )) +
+  geom_point()
+```
+
+So it looks like there isn't a huge relationship between well content and well depth, but there is a something worth investigating for well depth and time. There seems to be a higher concentration of gas wells after 2010, which is exactly what I expected (shale revolution). Interesting to see the little bunch of orange right after 1980, I wonder what was going on in the world then! 
