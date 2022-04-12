@@ -1,0 +1,40 @@
+---
+title: "Nuclear Paper"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+if (!require('pacman')) install.packages('pacman')
+library(pacman)
+p_load(tidyverse, ggplot2)
+cons = read_csv2("http://jmaurit.github.io/analytics/labs/data/consumption-no-areas_2019_hourly.csv")
+```
+```{r}
+cons <- cons %>% 
+  mutate(time = case_when(
+    end == ' 01' ~ 1, end == ' 02' ~ 2,
+    end == ' 03' ~ 3, end == ' 04' ~ 4,
+    end == ' 05' ~ 5, end == ' 06' ~ 6,
+    end == ' 07' ~ 7, end == ' 08' ~ 8,
+    end == ' 09' ~ 9, end == ' 10' ~ 10,
+    end == ' 11' ~ 11, end == ' 12' ~ 12,
+    end == ' 13' ~ 13, end == ' 14' ~ 14,
+    end == ' 15' ~ 15, end == ' 16' ~ 16,
+    end == ' 17' ~ 17, end == ' 18' ~ 18,
+    end == ' 19' ~ 19, end == ' 20' ~ 20,
+    end == ' 21' ~ 21, end == ' 22' ~ 22,
+    end == ' 23' ~ 13, end == ' 00' ~ 24,
+    TRUE ~ 0
+  ))
+unique(cons$end)
+cons
+cons %>%
+  ggplot(mapping = aes(x = start, y = NO)) +
+  geom_line(aes(x = start, y = NO, color = Date), alpha = .1) +
+  theme(legend.position="none")
+```
+

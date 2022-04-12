@@ -1,0 +1,299 @@
+---
+title: "ENE 434 Lab 6"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r packages}
+if (!require('pacman')) install.packages('pacman')
+library(pacman)
+p_load(tidyverse, fpp3, lubridate)
+```
+###reading data
+```{r}
+power_df = read_csv("/Users/EthanMcChristian/Desktop/Dekstop 09:29/power_df.csv")
+```
+###wrangling
+```{r}
+colnames(power_df)[23] = "ets_price"
+```
+###plotting
+```{r}
+ggplot(power_df, aes(x=date, y=ets_price)) +
+  geom_line()
+```
+###tsibble & $/KWh
+```{r}
+power_df$date = yearmonth(power_df$date)
+power_ts = tsibble(power_df, index=date)
+power_ts = power_ts %>% mutate(
+  DK1 = DK1/1000
+)
+```
+###moddelling with a AR(2,0,0)
+```{r}
+armax1 = power_ts %>% fill_gaps() %>%
+  model(ARIMA(DK1 ~ ets_price + pdq(2,0,0)))
+report(armax1)
+```
+###scenerios based on AR(2) model
+```{r}
+#no change 
+scen1 = new_data(power_ts, 12) %>% mutate(
+  ets_price = rep(power_ts$ets_price[128],12)
+) 
+
+#constant increase
+scen2 = new_data(power_ts, 12) %>% mutate(
+  ets_price = rep(power_ts$ets_price[128],12)  +  cumsum(rep(.5,12))
+) 
+```
+###creating forecasts
+```{r}
+armax1_forecast1 = forecast(armax1, new_data=scen1)
+armax1_forecast2 = forecast(armax1, new_data=scen2)
+```
+###graphing forecasts
+```{r}
+armax1_forecast1 %>% autoplot(power_ts)
+armax1_forecast2 %>% autoplot(power_ts)
+```
+###testing for stationarity
+```{r}
+p_load(tseries)
+adf.test(power_ts$ets_price)
+```
+###comparing goodness of fit of two models
+```{r}
+armax2 = power_ts %>% fill_gaps() %>% model(
+  modWithEts = ARIMA(DK1 ~ ets_price + pdq(2,1,0)),
+  modWOutEts = ARIMA(DK1 ~ pdq(2,1,0))
+  )
+glance(armax2) %>% arrange(AICc)
+```
+###looking at model residuals
+```{r}
+armax2 %>% 
+  select(modWithEts) %>%
+  gg_tsresiduals()
+```
+###
+```{r}
+fcast3 = armax2 %>% select(modWithEts) %>% forecast(new_data=scen1)
+fcast4 = armax2 %>% select(modWithEts) %>% forecast(new_data=scen2)
+```
+###forecasting w/ constant prices and armax model
+```{r}
+fcast3 %>% autoplot(power_ts)
+```
+###forecasting w/ increasing ETS prices and armax model
+```{r}
+fcast4 %>% autoplot(power_ts)
+```
+###
+```{r}
+
+```
+###data wrangling
+```{r}
+cons = read_csv2("http://jmaurit.github.io/analytics/labs/data/consumption-no-areas_2019_hourly.csv")
+#cons["Date"] = as.Date(cons$Date, format="%d/%m/%Y")
+cons = cons %>% separate(Hours, sep="-", into=c("start", "end"))
+
+#we use lubridate to create a date-time columns
+cons["period"] = dmy_h(paste(cons$Date, cons$start))
+
+#We have one missing value - I will fudge it and replace it with the previous hours value
+cons[["NO"]][cons$period==as_datetime("2019-03-31 02:00:00")] = cons[["NO"]][cons$period==as_datetime("2019-03-31 01:00:00")]
+
+#And we have one duplicate hour
+duplicates(cons)
+dupRow = duplicates(cons)[2,]
+cons = cons %>% rows_delete(dupRow, by=c("period", "NO"))
+```
+
+###tsibble and preview
+```{r}
+cons_ts = cons %>% select("NO1":"period") %>% tsibble(index=period)
+cons_ts %>% select(NO) %>% autoplot()
+```
+###looking at a smaller interval
+```{r}
+cons_ts %>%
+  dplyr::filter((period>=as_datetime("2019-11-01 00:00:00")) & (period<=as_datetime("2020-01-01 00:00:00"))) %>%  autoplot(NO)
+```
+###
+```{r}
+#short_cons = ts(window(cons_ts, start="2019-11-01", end="2020-01-01"), frequency=24)
+
+smod = cons_ts %>% model(
+  fmod1 = ARIMA(NO ~ fourier(K=1) + pdq(2,0,0) + PDQ(0,0,0))
+)
+
+
+forecast1 = smod %>% forecast(h=24*14)
+
+
+forecast1 %>%  autoplot(cons_ts[cons_ts$period>as_date("2019-10-01 00:00:00"),], level = 95)
+```
+###fourier models for multiple seasonalities
+```{r}
+smod2 = cons_ts %>% model(
+  fmod1 = ARIMA(NO ~ fourier(K=1) +  PDQ(0,0,0)),
+  fmod2 = ARIMA(NO ~ fourier(K=2) +  PDQ(0,0,0)),
+  fmod3 = ARIMA(NO ~ fourier(K=3) +  PDQ(0,0,0)),
+  fmod4 = ARIMA(NO ~ fourier(K=4) +  PDQ(0,0,0)),
+  fmod5 = ARIMA(NO ~ fourier(K=5) + PDQ(0,0,0)),
+  fmod6 = ARIMA(NO ~ fourier(K=6) + PDQ(0,0,0)),
+  fmod7 = ARIMA(NO ~ fourier(K=7) + PDQ(0,0,0)),
+  fmod8 = ARIMA(NO ~ fourier(K=8) + PDQ(0,0,0))
+)
+```
+###forecasting all of them for two weeks
+```{r}
+smod2 %>%
+  forecast(h = 24*14) %>%
+  autoplot(cons_ts[cons_ts$period>as_datetime("2019-09-01 00:00:00"),], level = 95) +
+  facet_wrap(vars(.model), ncol = 2) +
+  guides(colour = FALSE, fill = FALSE, level = FALSE) +
+  geom_label(
+    aes(x = as_datetime("2019-10-01 00:00:00"), y = 20000, label = paste0("AICc = ", format(AICc))),
+    data = glance(smod2)
+  )
+```
+###looking at fmod8 closer
+```{r}
+smod2 %>% select(fmod8) %>% 
+  forecast(h = 24*14) %>%
+  autoplot(cons_ts %>% dplyr::filter(period>as_datetime("2019-09-01 00:00:00")), level = 95)
+```
+###weekly and daily variation
+```{r}
+smod3 = cons_ts %>%
+  model(
+    fmod1 = ARIMA(NO ~ PDQ(0, 0, 0) +
+                fourier(period = 24, K = 8) + fourier(period = 24*7, K = 5))
+  )
+
+forecast2 = smod3 %>% forecast(h = 24*14)
+
+forecast2 %>% autoplot(cons_ts %>% dplyr::filter(period>as_datetime("2019-09-01 00:00:00")))
+```
+##Daily consumption and price
+###import data
+```{r}
+cons_daily = read_csv2("http://jmaurit.github.io/analytics/labs/data/consumption-per-country_2019_daily.csv")
+```
+
+###
+```{r}
+cons_daily["date"] = as.Date(cons_daily$date, format="%d/%m/%Y")
+```
+
+```{r}
+prices_daily = read_csv2("http://jmaurit.github.io/analytics/labs/data/elspot_prices_2019_daily.csv")
+```
+
+```{r}
+prices_daily["date"] = as.Date(prices_daily$date, format="%d/%m/%Y")
+```
+
+```{r}
+NO_df = prices_daily %>% dplyr::select(date, Oslo) %>% inner_join(dplyr::select(cons_daily, date, NO), by="date")
+colnames(NO_df)[2:3] = c("Oslo_price_EUR_MWH", "NO_cons_MWH")
+```
+
+```{r}
+NO_ts = tsibble(NO_df, index=date)
+```
+
+```{r}
+NO_ts = NO_ts %>% mutate(
+  log_dprice = difference(log(Oslo_price_EUR_MWH)), 
+  log_dcons = difference(log(NO_cons_MWH))
+)
+```
+
+
+```{r}
+NO_ts %>% select(log_dprice) %>% autoplot()
+```
+```{r}
+NO_ts %>% select(log_dcons) %>% autoplot()
+```
+
+```{r}
+varMod = NO_ts %>%
+  model(
+    mod1 = VAR(vars(log_dprice, log_dcons))
+  )
+
+varMod %>% report()
+```
+
+```{r}
+varMod %>%
+  augment() %>%
+  ACF(.innov) %>%
+  autoplot()
+```
+
+```{r}
+varMod %>%
+  forecast(h=14) %>%
+  autoplot(NO_ts %>% dplyr::filter(date>as_date("2019-09-01")))
+```
+#Assignment
+##Question 1
+In a dynamic regression model, it may make sense to include lagged variables as exogenous regressors. In the model of DK1 prices, include both contemporaneous and lagged carbon permit prices. How does this change your model? (You may want to read Ch 10.6 in fpp3).
+```{r}
+armax3 = power_ts %>% fill_gaps() %>% model(
+  modWithEts = ARIMA(DK1 ~ ets_price + pdq(2,1,0)),
+  mod_ets_lagged = ARIMA(DK1 ~ ets_price + pdq(2,1,0) +
+                lag(ets_price) + lag(ets_price, 2) + lag(ets_price, 3)))
+glance(armax3) %>% arrange(AICc) #better fit!!
+```
+```{r}
+armax3 %>% 
+  select(modWithEts) %>%
+  gg_tsresiduals()
+armax3 %>% 
+  select(mod_ets_lagged) %>%
+  gg_tsresiduals()
+```
+
+```{r}
+fcast5 = armax3 %>% select(mod_ets_lagged) %>% forecast(new_data=scen1)
+fcast6 = armax3 %>% select(mod_ets_lagged) %>% forecast(new_data=scen2)
+```
+
+```{r}
+fcast3 %>% autoplot(power_ts) #constant carbon prices, ets model (no lags)
+fcast4 %>% autoplot(power_ts) #increasing carbon prices, ets model
+fcast5 %>% autoplot(power_ts) #constant carbon prices, lagged model
+fcast6 %>% autoplot(power_ts) #increasing carbon prices, lagged model
+```
+
+##Question 2
+From ENTSOE-E or statnett, download hourly consumption data for Norway for 2017 and 2018. Join this with the 2019 data in order to create one long time series for Norwegian consumption. Then model the seasonality in the data (at monthly, weakly and daily level), with fourier terms.
+```{r}
+cons_2017 <- read_csv('https://raw.githubusercontent.com/emcchri5/codebank/main/NO_Energy_Cons_2017.csv')
+cons_2018 <- read_csv('https://raw.githubusercontent.com/emcchri5/codebank/main/NO_Energy_Cons_2018.csv')
+```
+```{r}
+cons %>% select('Date', 'start', 'end', 'NO', 'period')
+cons_2017 
+#cons["Date"] = as.Date(cons$Date, format="%d/%m/%Y")
+cons_2017 = cons_2017 %>% separate('Time(Local)', sep=" ", into=c("date", "time"))
+cons_2017
+#we use lubridate to create a date-time columns
+p_load(lubridate)
+cons_2017["period"] = dmy_h(paste(cons_2017$date, cons_2017$time))
+#We have one missing value - I will fudge it and replace it with the previous hours value
+cons_2017
+
+```
+

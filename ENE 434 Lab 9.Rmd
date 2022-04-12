@@ -1,0 +1,196 @@
+---
+title: "ENE 434 Lab 9"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#Set-up
+##packages
+```{r}
+if (!require('pacman')) install.packages('pacman')
+library(pacman)
+p_load(devtools, tidyverse, lubridate, coronavirus)
+```
+
+##loading in data from github user
+```{r}
+devtools::install_github("RamiKrispin/coronavirus")
+```
+
+##looking @ data
+```{r}
+head(coronavirus)
+unique(coronavirus$type)
+```
+#previewing data
+##summarizing cases
+```{r}
+totals = coronavirus %>% group_by(date, type) %>% 
+  summarise(
+    total_new_cases = sum(cases)
+  )
+```
+#filtering and graphing
+```{r}
+totals = totals %>% filter(total_new_cases>=0)
+
+totals %>% ggplot(aes(x=date, y=total_new_cases)) +
+                    geom_line() +
+                    facet_wrap(~type, ncol=1, scales="free_y")
+```
+
+```{r}
+totals = totals %>% group_by(type) %>%  mutate(
+    total_cum_cases = cumsum(total_new_cases)
+  )
+
+totals %>% ggplot(aes(x=date, y=total_cum_cases)) +
+                    geom_line() +
+                    facet_wrap(~type, ncol=1, scales="free_y")
+```
+##log10 scales (%)
+```{r}
+totals %>% ggplot(aes(x=date, y=total_cum_cases)) +
+                    geom_line() +
+                    facet_wrap(~type, ncol=1, scales="free_y") +
+                  scale_y_log10() 
+```
+##registering google key
+```{r}
+p_load(ggmap)
+maps_api_key = Sys.getenv('GOOGLE_API_KEY')
+register_google(key = maps_api_key)
+```
+##laoding in maps
+```{r}
+europe=get_map(location = c(lon = 10, lat = 55), zoom=4, maptype="roadmap") 
+```
+##filtering coronavirus dataset by europe latitude/longitude
+```{r}
+euro_data = coronavirus %>% dplyr::filter(long>-20, long<40, lat>38, lat<70)
+```
+
+##aggregating data
+```{r}
+euro_cum = euro_data %>% group_by(country, type) %>% summarise(
+  cumCases = sum(cases),
+  long = mean(long),
+  lat =mean(lat)
+)
+euro_confirmed = euro_cum %>% filter(type=="confirmed")
+```
+##mapping, finally
+```{r}
+ggmap(europe) +
+geom_point(aes(x = long, y = lat, size=cumCases), color="red", data = euro_confirmed)
+```
+#facets
+##filtering 
+```{r}
+euro_data = euro_data %>% filter(is.na(province))
+```
+
+##summing cases by country & type
+```{r}
+euro_data = euro_data %>% group_by(type, country) %>% mutate(
+  cumCases = cumsum(cases)
+)
+```
+
+##graphing facts (ugly for some reason)
+```{r}
+euro_data %>% filter(type=="confirmed", date>as.Date("2020-02-15")) %>% ggplot(aes(x=date, y=cumCases)) +
+  geom_line(color="red") +
+  facet_wrap(~country, ncol=5, scales="free_y") +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 90))
+```
+
+#Electricty demand and Covid
+##loading package
+```{r}
+p_load(fpp3)
+```
+
+##loading in data
+```{r}
+wtDF = read_csv("https://jmaurit.github.io/analytics/labs/data/wtDF.csv")
+```
+
+##checking out variables
+```{r}
+unique(wtDF$variable)
+unique(wtDF$area)
+```
+
+##graphing consumption
+```{r}
+consDF = wtDF %>% filter(variable=="Consumption", area %in% c("DK1", "DK2", "SE4"))
+
+consDF %>% ggplot(aes(x=time, y=value)) +
+  geom_line() +
+  geom_smooth() +
+  geom_vline(xintercept=ymd_h("2020-03-12 00"), color="red") +
+  facet_grid(area ~ ., scales="free_y") +
+  ylab("Consumption")
+```
+##creating doy and year columns
+```{r}
+consDF["year"] = year(consDF$time)
+consDF["doy"] = yday(consDF$time)
+
+#Which day of year is march 12th
+yday(as_date(ymd("2020-03-12")))
+```
+##graphing
+```{r}
+consDF %>% ggplot(aes(x=doy, y=value, group=factor(year))) +
+  geom_line(alpha=.1) +
+  geom_smooth(span=.2, aes(color=factor(year))) +
+  geom_vline(xintercept=yday(ymd("2020-03-12")), color="red") +
+  facet_grid(area ~ ., scales="free_y") +
+  ylab("Consumption") +
+  xlab("Day of year") +
+  labs(color="year")
+```
+
+##aggregating to daily values
+```{r}
+#aggregate to daily data
+consDF["date"] = as_date(consDF$time)
+consDF_daily = consDF%>% group_by(area, date) %>% summarise(
+  consumption = sum(value, na.rm=TRUE)
+)
+```
+##
+```{r}
+consDF_daily = consDF_daily %>% filter(!is.na(date))
+consDF_daily["corona"] =  ifelse(consDF_daily$date>as.Date("2020-03-12") & consDF_daily$date<as.Date("2020-06-01"), 1, 0)
+```
+##calculating a yearly difference curve
+```{r}
+consDF_daily = consDF_daily %>%group_by(area) %>% mutate(
+  yearDiff = ((consumption - lag(consumption, 364))/lag(consumption, 364))*100
+)
+```
+
+##converting to tsibble (time series tibble) format 
+```{r}
+consTSibble =consDF_daily %>% filter(!is.na(yearDiff)) %>% as_tsibble(key=area)
+consTSibble =consDF_daily %>% filter(!is.na(consumption)) %>% as_tsibble(key=area)
+```
+
+##plotting
+```{r}
+consTSibble %>% filter(date>=as_date("2020-01-01") & date<as_date("2020-06-01")) %>% ggplot(aes(x=date, y=yearDiff, color=factor(corona, labels =c("No", "Yes")))) +
+  geom_line() +
+  geom_smooth(span=.3) +
+  facet_wrap(~area, ncol=1) +
+  labs(color="Post restrictions") +
+  xlab("") +
+  ylab("Difference in el. consumption, % change yoy")
+```
+

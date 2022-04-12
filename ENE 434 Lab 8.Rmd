@@ -1,0 +1,284 @@
+---
+title: "ENE 434 Lab 8"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#Setup
+##loading packages
+```{r}
+if (!require('pacman')) install.packages('pacman')
+library(pacman)
+p_load(lubridate, tidyverse)
+```
+
+##Loading data
+```{r}
+#so here we're actually using data from lab 7, so...
+pv_df= read_csv("http://jmaurit.github.io/analytics/labs/data/pv_df.csv")
+```
+
+##plotting
+```{r}
+pv_df %>% ggplot(aes(x=date, y=cost_per_kw)) + 
+  geom_point(alpha=.01) +
+  ylim(.25e4,1.25e4)
+```
+
+##creating incentive per kw column
+```{r}
+pv_df["incentive_per_kw"] = pv_df$incentive_amount/pv_df$nameplate
+```
+
+##plotting incentives
+```{r}
+pv_df %>% ggplot(aes(x=incentive_per_kw, y=log(cost_ex_subsid_per_kw))) +
+  geom_point(alpha=.01) +
+  geom_smooth(method="lm")
+```
+##grouping by country and year, getting summaries
+```{r}
+county_data = pv_df %>% group_by(county, year) %>% summarise(
+  avg_county_cost = mean(cost_per_kw, na.rm=TRUE),
+  avg_county_cost_less_sub = mean(cost_ex_subsid_per_kw, na.rm=TRUE),
+  county_year_total = sum(nameplate, na.rm=TRUE), 
+  county_lat = mean(latitude, na.rm=TRUE), 
+  county_long = mean(longitude, na.rm=TRUE)
+)
+```
+
+##
+```{r}
+county2014 =county_data %>% filter(year==2014) 
+
+county2014 %>% ggplot(aes(x=county_year_total, y=avg_county_cost)) + geom_point()
+```
+##setting up ggmaps
+```{r}
+p_load(ggmap)
+maps_api_key = Sys.getenv('GOOGLE_API_KEY')
+register_google(key = maps_api_key)
+```
+
+##loading in calfornia map
+```{r}
+california=get_map(location = c(lon = -119, lat = 36), zoom=6, maptype="roadmap")
+```
+
+##plotting county costs 
+```{r}
+ggmap(california) +
+geom_point(aes(x = county_long, y = county_lat, size=county_year_total, color=avg_county_cost), data = county2014) +
+scale_color_continuous(low="blue", high="red")
+```
+
+##same plot, different year
+```{r}
+county20102014 =county_data %>% filter(year==2010 | year==2014) 
+ggmap(california) +
+geom_point(aes(x = county_long, y = county_lat, size=county_year_total, color=avg_county_cost), data = county20102014) +
+facet_wrap(~year) +
+scale_color_continuous(low="blue", high="red")
+```
+#Regressions
+##changing to MW instead of kw
+```{r}
+pv_df$county_year_total_mw = pv_df$county_year_total/1000
+pv_df$contractor_year_total_mw = pv_df$contractor_year_total/1000
+pv_df$contractor_market_share_perc = pv_df$contractor_market_share*100
+```
+
+##estimating cost on regressors(linear model)
+```{r}
+lm_mod1 = lm(cost_per_kw ~ date + 
+  county +
+    sector +
+    nameplate + 
+    county_year_total_mw +
+    incentive_per_kw + 
+    contractor_year_total_mw +
+    lease +
+  china,
+    data=pv_df)
+
+summary(lm_mod1)
+```
+
+#shrinkage
+```{r}
+p_load(glmnet)
+```
+
+##dropping NAs
+```{r}
+modelData = pv_df %>% select(cost_per_kw, date, county, sector, nameplate, county_year_total_mw, incentive_per_kw, contractor_year_total_mw, lease, china)
+
+modelData = drop_na(modelData)
+```
+
+##
+```{r}
+x = model.matrix(cost_per_kw ~ date +
+  county +
+    sector +
+    nameplate + 
+    county_year_total_mw +
+  contractor_year_total_mw +
+    incentive_per_kw +
+    lease +
+  china,
+    data=modelData)[,-1]
+
+# The [,-1] deletes the first column, which is the y-variable, which is entered separately in the command
+
+y= modelData$cost_per_kw
+
+```
+
+##
+```{r}
+lasso_mod0=glmnet(x,y,alpha=1,lambda=1)
+coef(lasso_mod0)
+```
+##cross validation
+```{r}
+cv.out=cv.glmnet(x,y,alpha=1)
+bestlam=cv.out$lambda.min
+print(bestlam)
+```
+##running lasso model with optimal lambda
+```{r}
+lasso_mod1=glmnet(x,y,alpha=1,lambda=bestlam)
+coef(lasso_mod1)
+```
+##loading ing mgcv to run gam models (generalized additive models)
+```{r}
+p_load(mgcv)
+```
+
+##estimating gam model
+```{r}
+gam_mod1=gam(cost_per_kw ~ s(time_days) + 
+    sector +
+    nameplate + 
+    county_year_total_mw +
+     contractor_year_total_mw +
+    incentive_per_kw + 
+    lease +
+    china, 
+    family=gaussian,
+    data=pv_df)
+```
+
+```{r}
+plot.gam(gam_mod1, se=TRUE)
+```
+##looking at GAM estimated parameters
+```{r}
+summary(gam_mod1)
+```
+
+##creating new dataset that is 200 long
+```{r}
+pdat1 =with(pv_df,
+list(
+time_days = round(seq(min(time_days), max(time_days), length = 200)),
+sector = rep("Residential",200),
+nameplate = rep(mean(nameplate), 200),
+county_year_total_mw = rep(mean(county_year_total_mw), 200),
+contractor_year_total_mw = rep(mean(contractor_year_total_mw), 200),
+incentive_per_kw = rep(mean(incentive_per_kw/1000), 200),
+lease = rep(0, 200),
+china = rep(0, 200)
+))
+pdat2 =with(pv_df,
+list(
+time_days = round(seq(min(time_days), max(time_days), length = 200)),
+sector = rep("Residential",200),
+nameplate = rep(mean(nameplate), 200),
+county_year_total_mw = rep(mean(county_year_total_mw), 200),
+contractor_year_total_mw = rep(mean(contractor_year_total_mw), 200),
+incentive_per_kw = rep(mean(incentive_per_kw/1000), 200),
+lease = rep(0, 200),
+china = rep(1, 200)
+))
+```
+
+##creating predictions
+```{r}
+pred1 = predict(gam_mod1, pdat1, type = "terms", se.fit = TRUE)
+
+pred1_fit = as_tibble(pred1$fit)
+pred1_fit["intercept"] = coef(gam_mod1)[1]
+
+pred1_fit = pred1_fit %>% mutate(prediction = rowSums(.))
+
+pred1_fit["days"] = with(pv_df, round(seq(min(time_days), max(time_days), length = 200)))
+
+pred2 = predict(gam_mod1, pdat2, type = 'terms', se.fit = TRUE)
+
+pred2_fit = as_tibble(pred2$fit)
+pred2_fit['intercpet'] = coef(gam_mod1)[1]
+
+pred2_fit = pred2_fit %>% mutate(prediction = rowSums(.))
+
+pred2_fit['days'] = with(pv_df, round(seq(min(time_days), max(time_days), length = 200)))
+```
+
+##creating confidence intervals
+```{r}
+pred1_se= as_tibble(pred1$se)
+pred1_fit["prediction_se"] = rowSums(pred1_se)
+pred1_fit["upper"] = pred1_fit$prediction +  2 * pred1_fit$prediction_se
+pred1_fit["lower"] = pred1_fit$prediction - 2* pred1_fit$prediction_se
+
+pred2_se= as_tibble(pred2$se)
+pred2_fit["prediction_se"] = rowSums(pred2_se)
+pred2_fit["upper"] = pred2_fit$prediction +  2 * pred2_fit$prediction_se
+pred2_fit["lower"] = pred2_fit$prediction - 2* pred2_fit$prediction_se
+```
+
+##Plotting predictions
+```{r}
+ggplot(pred1_fit, aes(x=days, y=prediction, ymin=upper, ymax=lower))+
+    geom_ribbon(alpha=.5, fill="grey") +
+    geom_line() + 
+    labs(x="Days since 1.1.2006", y="Prediction") +
+    theme_bw() 
+ggplot(pred2_fit, aes(x=days, y=prediction, ymin=upper, ymax=lower))+
+    geom_ribbon(alpha=.5, fill="grey") +
+    geom_line() + 
+    labs(x="Days since 1.1.2006", y="Prediction") +
+    theme_bw() 
+```
+
+#Assignment
+##Question 1
+Can you create the variables zip_year_total_mw, that is, the cumulative amount of capacity in each zip code (a finer geographic division than county). Chart the relationship between total installed capacity in a year and costs at the zip level. Include zip_year_total_mw in the linear model instead of county_year_total_mw. Are the estimated results substantially different?
+```{r}
+
+```
+
+##Question 2
+In lab 7 we used cumulative capacity to model learning curves. In this lab we used days/dates to model change of prices over time. Run regressions (linear and semi-parametric (GAM)) where you use cumulative capacity instead of days/date to model the effects over time. For the semi-parametric model, create a prediction and compare with the results in the lab. Are the results substantially different?
+```{r}
+
+```
+
+##Question 3
+Now create a prediction model from a GAM estimation for Chinese panels over time. In addition, create a new variable that indicates the share (from 0-1) of Chinese panels among installed solar panels per month. Use this series to create a prediction model (so instead of inputting a column of 0s or 1s to indicate Chinese, or non-Chinese panels, you would put in the series representing the share of panels.) Compare the predictive curve of cost over time with the curve representing non-Chinese panels. What does this tell you about the influence of Chinese panels on the average cost of solar panel systems during this time period?
+```{r}
+
+```
+
+##Question 4
+Open ended question: What other questions could you answer with this data set? Show in the form figures, regressions, or other estimations. You could also consider downloading updated data here.
+```{r}
+
+```
+
+
+

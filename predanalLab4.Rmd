@@ -1,0 +1,116 @@
+---
+title: "PredAnalLab4"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+if(!require ("pacman")) install.packages("pacman")
+library(pacman)
+p_load(ISLR)
+```
+
+```{r}
+RSS=function(s,x1,y) #define a function with 3 variables
+{
+yR1=mean(y[x1<s]) #find the mean of all ys that have x1 < some cutoff
+yR2=mean(y[x1>=s]) # find the mean of all y's that have x1 > some cutoff
+rss=sum((y[x1<s]-yR1)^2)+sum((y[x1>=s]-yR2)^2) #rss = the residual sum of squares
+return(rss)
+}
+s=30
+Hitters=Hitters[!is.na(Hitters$Salary),] #getting rid of NA's
+Hitters$logSalary=log(Hitters$Salary) #taking the log of salary
+optimise(RSS,lower=0,upper=250,x1=Hitters$Hits,y=Hitters$logSalary) #optimizing the equation for RSS between the range of - and 250
+optimise(RSS,lower=0,upper=50,x1=Hitters$Years,y=Hitters$logSalary) #optimizing for RSS within the range of 0 - 50
+?optimise
+```
+
+```{r}
+p_load(tree)
+tree1=tree(logSalary~Hits+Years,data=Hitters)
+plot(tree1)
+text(tree1,pretty=0)
+```
+c) Prediction for someone with 2.5 years and 125 hits: 5.264
+
+d)
+```{r}
+tree2=tree(logSalary~.-Salary,data=Hitters)
+plot(tree2)
+text(tree2,pretty=0)
+```
+
+```{r}
+summary(tree1)
+summary(tree2)
+sum(residuals(tree2)^2)
+sum(residuals(tree1)^2)
+```
+
+
+```{r}
+k_fold_cross_validation <- function(dataset, folds, model, formula)
+{
+  n = nrow(dataset)
+  k = folds
+  s = n/k
+  pred = matrix(0,n,1)
+  testMSE = matrix(0,k,1)
+  ii = 1
+  for(i in 1:k)
+  {
+    train = dataset[-(ii:(ii+s-1)),]
+    test = dataset[ii:(ii+s-1),]
+    tree1 = model(formula, data=train)
+    pred1 = predict(tree1, newdata=test)
+    testMSE[i] = mean((test$))
+  }
+}
+```
+```{r}
+n=nrow(Hitters)
+k=10
+s=n/k # Size of each fold
+pred=matrix(0,n,1)
+testMSE=matrix(0,k,1)
+ii=1
+for(i in 1:k)
+{
+train=Hitters[-(ii:(ii+s-1)),]
+test=Hitters[ii:(ii+s-1),]
+tree1=tree(logSalary~.-Salary,data=train)
+pred1=predict(tree1,newdata=test)
+testMSE[i]=mean((test$logSalary-pred1)^2)
+ii=ii+s
+}
+mean(testMSE)
+```
+```{r}
+p_load(randomForest)
+bagging=randomForest(logSalary~.-Salary,data=train)
+n=nrow(Hitters)
+k=10
+s=n/k # Size of each fold
+pred=matrix(0,n,1)
+testMSE=matrix(0,k,1)
+ii=1
+for(i in 1:k)
+{
+train=Hitters[-(ii:(ii+s-1)),]
+test=Hitters[ii:(ii+s-1),]
+bagging=randomForest(logSalary~.-Salary,data=train, mtry=19)
+pred1=predict(bagging,newdata=test)
+testMSE[i]=mean((test$logSalary-pred1)^2)
+ii=ii+s
+}
+mean(testMSE)
+varImpPlot(bagging)
+?varImpPlot
+```
+```{r}
+names()
+```
+
+
+

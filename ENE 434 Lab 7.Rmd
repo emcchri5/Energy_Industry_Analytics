@@ -1,0 +1,264 @@
+---
+title: "ENE 434 Lab 7"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+if (!require('pacman')) install.packages('pacman')
+library(pacman)
+p_load(lubridate, tidyverse)
+```
+#loading in his wrangled data
+```{r}
+pv_df= read_csv("http://jmaurit.github.io/analytics/labs/data/pv_df.csv")
+```
+#filtering to include 2006-2015
+```{r}
+pv_df = pv_df %>% filter(year<2015 & year>2006)
+```
+
+```{r}
+pv_df %>% ggplot(aes(x=date, y=cost_per_kw)) + 
+  geom_point(alpha=.01) +
+  geom_smooth(method="lm") +
+  ylim(.25e4,1.25e4)
+```
+
+```{r}
+capacity = pv_df %>% arrange(desc(date)) %>% group_by(date) %>% summarise(
+  newCapacity = sum(nameplate)
+)
+capacity["cumCapacity"] = cumsum(capacity$newCapacity)
+
+ggplot(capacity, aes(x=date, y=cumCapacity)) + 
+  geom_line()
+```
+#creating a yearmonth column
+```{r}
+pv_df["monthdate"] = as.Date(paste(pv_df$year, pv_df$month, "1", sep="-"))
+```
+#aggregating costs by yearmonth column
+```{r}
+cost = pv_df %>% group_by(monthdate) %>% summarise(
+  avgCost = mean(cost_per_kw),
+  avgCost_less_sub = mean(cost_ex_subsid_per_kw)
+)
+```
+
+#Graphing average costs over time
+```{r}
+cost %>% arrange(desc(monthdate)) %>% dplyr::select(monthdate, avgCost, avgCost_less_sub) %>% pivot_longer(-monthdate, names_to = "variable", values_to = "values") %>%  ggplot(aes(x=monthdate, y=values, color=variable)) + geom_line()
+```
+#
+```{r}
+p_load(ggmap)
+```
+#registering key
+```{r}
+maps_api_key = Sys.getenv('GOOGLE_API_KEY')
+register_google(key = maps_api_key)
+```
+#
+```{r}
+california=get_map(location = c(lon = -119, lat = 36), zoom=6, maptype="roadmap") 
+```
+```{r}
+ggmap(california) +
+geom_point(aes(x = longitude, y = latitude),alpha=.005, color="red", data = pv_df)
+```
+#cumulative capacity
+```{r}
+pv_df = pv_df %>% arrange(date) %>% mutate(
+  cum_cap = cumsum(nameplate)
+)
+```
+
+#base log 2 of capacity and cost
+```{r}
+pv_df %>% ggplot(aes(x=log2(cum_cap), y=log2(cost_per_kw))) +
+  geom_point(alpha=.1) +
+  geom_smooth(method="lm")
+```
+#Finding costs of 0 and deleting them
+```{r}
+zerovalue = pv_df %>% filter(cost_per_kw==0)
+pv_df = pv_df %>% filter(cost_per_kw!=0)
+```
+#linear model
+##estimating linear relationship
+```{r}
+pv_df["log2_cum_cap"] = log2(pv_df$cum_cap)
+pv_df["log2_cost_per_kw"] = log2(pv_df$cost_per_kw)
+
+learning_mod1 = lm(log2_cost_per_kw~log2_cum_cap, data=pv_df)
+summary(learning_mod1)
+```
+low adjusted r squared, model doesn't explain the data well
+##ploting log of cumulative capacity
+```{r}
+pv_df %>% ggplot(aes(x=monthdate, y=log2_cum_cap)) +
+  geom_point() + 
+  geom_smooth(method="lm")
+```
+##creating a linear regression for predictions
+```{r}
+cap_mod = lm(log2_cum_cap ~ monthdate, data=pv_df) 
+```
+##predicting capacity
+```{r}
+new_data = tibble(
+  monthdate = seq(ymd("2015-01-01"), ymd("2019-12-31"), by="months")
+)
+
+new_data["log2_cum_cap"] = predict(cap_mod, newdata=new_data)
+
+pv_df %>% ggplot(aes(x=monthdate, y=cum_cap)) +
+  geom_line() + 
+  geom_line(aes(x=monthdate, y=2^log2_cum_cap), data=new_data, color="red")
+```
+##predicting costs w/ linear function
+```{r}
+interval=predict(learning_mod1, newdata = new_data, interval="prediction")
+new_data["log2_cost_pred"] = interval[,1]
+new_data["lwr"] = interval[,2]
+new_data["upr"] = interval[,3]
+```
+
+##graphing predicted costs
+```{r}
+new_data %>% ggplot(aes(x=monthdate, y=2^log2_cost_pred)) +
+  geom_line() +
+  geom_ribbon(aes(ymin=2^lwr, ymax=2^upr), alpha=.5, fill="grey") +
+  theme_light()
+```
+#Polynomial model
+##defining the learning curve with polynomial functions
+```{r}
+learning_mod2 = lm(log2_cost_per_kw~poly(log2_cum_cap,4), data=pv_df)
+summary(learning_mod2)
+```
+##visualizing the learning curve
+```{r}
+pv_df["fittedmod2"] =  fitted(learning_mod2)
+
+pv_df %>% ggplot(aes(x=log2(cum_cap), y=log2(cost_per_kw))) +
+  geom_point(alpha=.1) +
+  geom_line(aes(x=log2(cum_cap), y=fittedmod2), color="red")
+```
+##predicting cumulative capacity
+```{r}
+pv_df = pv_df %>% mutate(monthdateNum = as.numeric(monthdate))
+```
+##convering the monthdate to numeric equivalent
+```{r}
+cap_mod2 = lm(log2_cum_cap ~ poly(monthdateNum,4), data=pv_df) 
+
+pv_df["fitted_cap"] = fitted(cap_mod2)
+
+pv_df %>% ggplot(aes(x=monthdate, y=log2_cum_cap)) +
+  geom_point() + 
+  geom_line(aes(x=monthdate, y=fitted_cap), color="red")
+```
+##Defining newdataset and predicting w/ polynomial model, graphing predictions
+```{r}
+new_data2 = tibble(
+  monthdate = seq(ymd("2015-01-01"), ymd("2019-12-31"), by="months"),
+  monthdateNum = as.numeric(monthdate)
+)
+
+new_data2["log2_cum_cap"] = predict(cap_mod2, newdata=new_data2)
+
+pv_df %>% ggplot(aes(x=monthdate, y=cum_cap)) +
+  geom_line(aes(x=monthdate, y=2^fitted_cap), color="green") + 
+  geom_line(aes(x=monthdate, y=cum_cap)) +
+  geom_line(aes(x=monthdate, y=2^log2_cum_cap), data=new_data2, color="red")
+```
+##using polynomial to predict costs but linear to predict capacity
+```{r}
+new_data2["log2_cum_cap"] = predict(cap_mod, newdata=new_data2) #original linear capacity model to predict cum capacity. 
+new_data2["log2_cost_pred"] = predict(learning_mod2, newdata = new_data2)
+
+interval=predict(learning_mod2, newdata = new_data2, interval="prediction")
+new_data2["lwr"] = interval[,2]
+new_data2["upr"] = interval[,3]
+```
+##graphing predictions for cost
+```{r}
+new_data2 %>% ggplot(aes(x=monthdate, y=2^log2_cost_pred)) +
+  geom_line() +
+  geom_ribbon(aes(ymin=2^lwr, ymax=2^upr), alpha=.5, fill="grey") +
+  theme_light()
+```
+#splines
+##loading package
+```{r}
+p_load(splines)
+```
+##fitting a "cubic regression" spline with specified knots
+```{r}
+learning_mod3 = lm(log2_cost_per_kw~bs(log2_cum_cap, knots=c(7, 10, 13, 16)), data=pv_df)
+fittedmod3 = fitted(learning_mod3)
+
+pv_df %>% ggplot(aes(x=log2(cum_cap), y=log2(cost_per_kw))) +
+  geom_point(alpha=.1) +
+  geom_line(aes(x=log2(cum_cap), y=fittedmod3), color="red")
+```
+##predicting cumulative cost and cost with spline model (and linear for capacity)
+```{r}
+new_data3 = tibble(
+  monthdate = seq(ymd("2015-01-01"), ymd("2019-12-31"), by="months")
+)
+
+new_data3["log2_cum_cap"] = predict(cap_mod, newdata=new_data3)
+
+new_data3["log2_cost_pred"] = predict(learning_mod3, newdata=new_data3)
+```
+##creating an external prediction to get upper and lower prediction bounds
+```{r}
+interval=predict(learning_mod3, newdata = new_data3, interval="prediction")
+```
+##appending upper and lower bounds
+```{r}
+new_data3["lwr"] = interval[,2]
+new_data3["upr"] = interval[,3]
+```
+##ploting it
+```{r}
+new_data3 %>% ggplot(aes(x=monthdate, y=2^log2_cost_pred)) +
+  geom_line() +
+  geom_line(aes(x = monthdate, y = 2^lwr), color = 'red', alpha = .5) +
+  geom_line(aes(x = monthdate, y = 2^upr), color = 'red', alpha = .5)
+```
+#Assignment
+##Question 1
+ Estimate separate learning curves for pre-2012 and post-2012 (doing log-linear estimation is fine). Can you do this with a single regression? What would be the advantages and disadvantages of doing so?
+```{r}
+
+```
+
+##Question 2
+Estimate the relationship between cumulative capacity and solar power costs with a local linear regression, or LOESS. (See section 7.6 and 7.82 in ISL). How is local linear regression similar to and different from splines. Use local linear regression create a point forecast of costs from 2015 to 2020. Does this suffer from the same problems as the Spline? (hint, in order to create out-of-sample forecasts with the loess() command, you will need to add the following parameter to the command control=loess.control(surface=“direct”)).
+```{r}
+
+```
+
+##Question 3
+Download an updated dataset from the California Solar Iniative. You want to use the dataset called the CSI Working Data Set. Use this data to test how accurate the predictions were from the models we ran above in the lab. You may want to refer to ISL ch. 2.2. and ch. 5.1.1. Can you improve on the goodness-of-fit of the model?
+```{r}
+
+```
+
+##Question 4
+Open-ended question. Find another (energy) data set where it would be of interest to apply a non-linear model. Try at least two different types of models (from among 7.1-7.6). What are the advantages of each? Disadvantages? Can you use the model to make a prediction or forecast? Show how and interpret.
+```{r}
+
+```
+
+
+
+
+
