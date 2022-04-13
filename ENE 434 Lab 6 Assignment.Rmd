@@ -159,7 +159,7 @@ forecast %>% autoplot(cons_total_ts)
 
 ##Question 3
 Create a VAR model for consumption and prices in 2019 using Danish data (You can find it on ENTSOE_E or at the Danish TSO’s energy data site. Create a 30 day forecast. Load in actual data for january 2020–how does your forecast look? Include wind power in Denmark as a variable. How does this affect the model and forecast?
-
+#data wrangling, getting dan consumption ready
 ```{r}
 DAN <- read.csv('https://raw.githubusercontent.com/emcchri5/codebank/main/Total%20Load%20Denmark.csv')
 DAN <- DAN %>%
@@ -171,7 +171,7 @@ DAN <- DAN %>%  separate('datetime', sep = ' - ', into=c('start','end')) %>%
   
 DAN
 ```
-
+#data wrangling, getting dan prices together
 ```{r}
 DAN_price <- read.csv('https://raw.githubusercontent.com/emcchri5/codebank/main/EL_prices_2019.csv')
 DAN_price <- DAN_price %>% select("ï..HourUTC","PriceArea","SpotPriceEUR") %>%
@@ -192,15 +192,94 @@ DAN_price$dizzy <- paste(DAN_price$day, DAN_price$month, sep = '.')
 DAN_price$date <- paste(DAN_price$dizzy, DAN_price$year, sep = '.')
 DAN_price <- DAN_price %>%
   select(-year,-month,-day,-dizzy)
+DAN_price %>%
+  arrange(by_group = date)
 ```
-
+#data wrangling... merging sets and tsibble stuff
 ```{r}
-DAN
-DAN_price
 DAN_data <- left_join(DAN_price, DAN)
 DAN_data <- DAN_data %>% 
   separate('time',sep = ':', into = c('hour','minute'))
-DAN_data["period"] = dmy_h(paste(DAN_data$date, DAN_data$time))
-  
+DAN_data$date <- gsub('\\.', '-', DAN_data$date)
+DAN_data["period"] = dmy_h(paste(DAN_data$date, DAN_data$hour))
+DAN_data[!complete.cases(DAN_data), ]
+DAN_data[["total_load"]][DAN_data$period==as_datetime("2019-03-31 02:00:00")] = DAN_data[["total_load"]][DAN_data$period==as_datetime("2019-03-31 01:00:00")]
+dupRow = duplicates(DAN_data)[2,]
+DAN_data = DAN_data %>% rows_delete(dupRow, by=c("period", 'total_load'))
+DAN_data <- DAN_data %>%
+  select(-hour, -minute) %>%
+  tsibble(index='period')
+DAN_data 
 ```
-cons_total["period"] = dmy_h(paste(cons_total$date, cons_total$hour))
+
+```{r}
+DAN_data_diff <- DAN_data %>% mutate( 
+  dprice = difference(price), #can't log price since it's negative
+  log_dcons = difference(log(total_load))
+)
+DAN_data_diff<- na.omit(DAN_data_diff) %>%
+  select(period, price, total_load,dprice,log_dcons)
+DAN_data_diff %>% select(dprice) %>% autoplot()
+DAN_data_diff %>% select(log_dcons) %>% autoplot()
+```
+
+```{r}
+varmod = DAN_data_diff %>%
+  model(
+    mod1 = VAR(vars(dprice, log_dcons))
+  )
+varmod2 = DAN_data_diff %>%
+  model(
+    mod2 = VAR(vars(price, total_load))
+  )
+varmod %>% report()
+varmod2 %>% report()
+```
+It's such a horrible model. The forecasting brough me back here to check. Where did we go wrong?
+
+```{r}
+varmod %>%
+  augment() %>%
+  ACF(.innov) %>%
+  autoplot() #failed to account for daily seasonality (or 12 hours for that matter)
+```
+```{r}
+DAN_data_diff <- DAN_data_diff %>%
+  mutate('periodd' = 'period') %>%
+  separate('period', sep = ' ', into=c('date','time')) %>%
+  mutate(date = as_date(date))
+DAN_data_diff
+varmod %>%
+  forecast(h=365*24) %>%
+  autoplot(DAN_data_diff)
+varmod2 %>%
+  forecast(h=30*24) %>%
+  autoplot(DAN_data_diff)
+```
+Why are the forecasts straight lines? This seem absolutely wrong. The expected difference is the mean, pretty much. 
+ 
+```{r}
+DAN_2020 <- read.csv('https://raw.githubusercontent.com/emcchri5/codebank/main/consumption%202020.csv')
+DAN_2020
+DAN_2020 <- DAN_2020 %>%
+  rename('total_load' = 'Actual.Total.Load..MW....BZN.DK1', 'datetime' = 'Time..CET.CEST.') %>%
+  select(datetime, total_load)
+DAN_2020 <- DAN_2020 %>%  separate('datetime', sep = ' - ', into=c('start','end')) %>%
+  separate('start', sep = ' ', into = c('date', 'time')) %>%
+  select(-end)
+
+DAN_2020 <- DAN_2020 %>%
+  separate('time', sep = ':', into=c('hour','minute'))
+
+DAN_2020["period"] = dmy_h(paste(DAN_2020$date, DAN_2020$hour))
+DAN_2020 <- DAN_2020 %>%
+  select(-hour, -minute, -date) 
+dupRow = duplicates(DAN_2020)[2,]
+DAN_2020 = DAN_2020 %>% rows_delete(dupRow, by=c("period", 'total_load'))
+DAN_2020 <- DAN_2020 %>%
+  tsibble(index = 'period')
+DAN_2020 %>% select(total_load) %>% autoplot() #I can't perform filters on this tsibble format... also our 95% confidence interval didn't work for January. I think it's safe to say we've failed this question. Where did we go wrong? Why is our prediction flat? 
+```
+ 
+
+
