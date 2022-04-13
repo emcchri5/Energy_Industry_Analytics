@@ -160,3 +160,47 @@ forecast %>% autoplot(cons_total_ts)
 ##Question 3
 Create a VAR model for consumption and prices in 2019 using Danish data (You can find it on ENTSOE_E or at the Danish TSO’s energy data site. Create a 30 day forecast. Load in actual data for january 2020–how does your forecast look? Include wind power in Denmark as a variable. How does this affect the model and forecast?
 
+```{r}
+DAN <- read.csv('https://raw.githubusercontent.com/emcchri5/codebank/main/Total%20Load%20Denmark.csv')
+DAN <- DAN %>%
+  rename('total_load' = 'Actual.Total.Load..MW....CTA.DK', 'datetime' = 'Time..CET.CEST.') %>%
+  select(datetime, total_load)
+DAN <- DAN %>%  separate('datetime', sep = ' - ', into=c('start','end')) %>%
+  separate('start', sep = ' ', into = c('date', 'time')) %>%
+  select(-end)
+  
+DAN
+```
+
+```{r}
+DAN_price <- read.csv('https://raw.githubusercontent.com/emcchri5/codebank/main/EL_prices_2019.csv')
+DAN_price <- DAN_price %>% select("ï..HourUTC","PriceArea","SpotPriceEUR") %>%
+  rename(Time = 'ï..HourUTC', price = "SpotPriceEUR") %>%
+  filter(PriceArea == 'DK1') %>%
+  separate('Time', sep = 'T', into=c('date','time')) %>%
+  separate('time', sep = "[+]", into=c('tid','useless')) %>%
+  select(-useless,-PriceArea) %>%
+  separate('tid', sep = ':', into= c('hour', 'minute','second'))
+DAN_price$time <- paste(DAN_price$hour, DAN_price$minute, sep= ":")
+DAN_price <- DAN_price %>%
+  select(-hour,-minute,-second)
+DAN_price
+DAN_price <- DAN_price %>%
+  separate('date', sep = '-', into = c('year', 'month', 'day'))
+DAN_price
+DAN_price$dizzy <- paste(DAN_price$day, DAN_price$month, sep = '.')
+DAN_price$date <- paste(DAN_price$dizzy, DAN_price$year, sep = '.')
+DAN_price <- DAN_price %>%
+  select(-year,-month,-day,-dizzy)
+```
+
+```{r}
+DAN
+DAN_price
+DAN_data <- left_join(DAN_price, DAN)
+DAN_data <- DAN_data %>% 
+  separate('time',sep = ':', into = c('hour','minute'))
+DAN_data["period"] = dmy_h(paste(DAN_data$date, DAN_data$time))
+  
+```
+cons_total["period"] = dmy_h(paste(cons_total$date, cons_total$hour))
