@@ -1,7 +1,7 @@
 ---
-title: "ENE 434 Lab 6 Assignment"
-output: html_document
-authors: 'Ethan McChristian', 'Mitchell Tyse', 'Sebastian Borgen'
+title: "ENE 434 Lab 6 Assignment Final"
+output: pdf_document
+author: 'Ethan McChristian, Mitchell Tyse, Sebastian Borgen'
 ---
 
 ```{r setup, include=FALSE}
@@ -76,6 +76,9 @@ fcast5 %>% autoplot(power_ts) #constant carbon prices, lagged model
 fcast6 %>% autoplot(power_ts) #increasing carbon prices, lagged model
 ```
 
+Answer:
+Without lagged variables, the error margins go lower and price doesn't seem to respond as drastically to carbon prices in the predictions.  When including lagged variables, the carbon prices seem to respond more and the error margins are smaller. The AICC is lower with lagged variables.
+
 ##Question 2
 From ENTSOE-E or statnett, download hourly consumption data for Norway for 2017 and 2018. Join this with the 2019 data in order to create one long time series for Norwegian consumption. Then model the seasonality in the data (at monthly, weakly and daily level), with fourier terms.
 ###importing data
@@ -139,6 +142,10 @@ duplicates(cons_total)
 #run this 3 times  until duplicates(cons_total is gone)
 dupRow = duplicates(cons_total)[2,]
 cons_total = cons_total %>% rows_delete(dupRow, by=c("period", 'cons'))
+dupRow = duplicates(cons_total)[2,]
+cons_total = cons_total %>% rows_delete(dupRow, by=c("period", 'cons'))
+dupRow = duplicates(cons_total)[2,]
+cons_total = cons_total %>% rows_delete(dupRow, by=c("period", 'cons'))
 duplicates(cons_total) #should be an empty 0x4 dataframe
 cons_total_ts <- cons_total %>%
   tsibble(index=period) %>%
@@ -169,8 +176,6 @@ DAN <- DAN %>%
 DAN <- DAN %>%  separate('datetime', sep = ' - ', into=c('start','end')) %>%
   separate('start', sep = ' ', into = c('date', 'time')) %>%
   select(-end)
-  
-DAN
 ```
 #data wrangling, getting dan prices together
 ```{r}
@@ -185,16 +190,12 @@ DAN_price <- DAN_price %>% select("ï..HourUTC","PriceArea","SpotPriceEUR") %>%
 DAN_price$time <- paste(DAN_price$hour, DAN_price$minute, sep= ":")
 DAN_price <- DAN_price %>%
   select(-hour,-minute,-second)
-DAN_price
 DAN_price <- DAN_price %>%
   separate('date', sep = '-', into = c('year', 'month', 'day'))
-DAN_price
 DAN_price$dizzy <- paste(DAN_price$day, DAN_price$month, sep = '.')
 DAN_price$date <- paste(DAN_price$dizzy, DAN_price$year, sep = '.')
 DAN_price <- DAN_price %>%
   select(-year,-month,-day,-dizzy)
-DAN_price %>%
-  arrange(by_group = date)
 ```
 #data wrangling... merging sets and tsibble stuff
 ```{r}
@@ -210,7 +211,6 @@ DAN_data = DAN_data %>% rows_delete(dupRow, by=c("period", 'total_load'))
 DAN_data <- DAN_data %>%
   select(-hour, -minute) %>%
   tsibble(index='period')
-DAN_data 
 ```
 
 ```{r}
@@ -245,13 +245,8 @@ varmod %>%
   autoplot() #failed to account for daily seasonality (or 12 hours for that matter)
 ```
 ```{r}
-DAN_data_diff <- DAN_data_diff %>%
-  mutate('periodd' = 'period') %>%
-  separate('period', sep = ' ', into=c('date','time')) %>%
-  mutate(date = as_date(date))
-DAN_data_diff
 varmod %>%
-  forecast(h=365*24) %>%
+  forecast(h=30*24) %>%
   autoplot(DAN_data_diff)
 varmod2 %>%
   forecast(h=30*24) %>%
@@ -261,7 +256,6 @@ Why are the forecasts straight lines? This seem absolutely wrong. The expected d
  
 ```{r}
 DAN_2020 <- read.csv('https://raw.githubusercontent.com/emcchri5/codebank/main/consumption%202020.csv')
-DAN_2020
 DAN_2020 <- DAN_2020 %>%
   rename('total_load' = 'Actual.Total.Load..MW....BZN.DK1', 'datetime' = 'Time..CET.CEST.') %>%
   select(datetime, total_load)
@@ -279,7 +273,7 @@ dupRow = duplicates(DAN_2020)[2,]
 DAN_2020 = DAN_2020 %>% rows_delete(dupRow, by=c("period", 'total_load'))
 DAN_2020 <- DAN_2020 %>%
   tsibble(index = 'period')
-DAN_2020 %>% select(total_load) %>% autoplot() #I can't perform filters on this tsibble format... also our 95% confidence interval didn't work for January. I think it's safe to say we've failed this question. Where did we go wrong? Why is our prediction flat? 
+DAN_2020 %>% select(total_load) %>% autoplot() #I can't perform filters on this tsibble format... also our 95% confidence interval didn't work for January. I think it's safe to say we've failed this question. Where did we go wrong? Why is our prediction flat? How are these predictions supposed to look? Maybe a phone call/zoom meeting/etc. could help clear this up. I'm not exactly sure how submissions work in this class and how big of a deal this inadequacy is, but we hope that this can be a learning opportunity rather than a learning hindrance!
 ```
  
 
