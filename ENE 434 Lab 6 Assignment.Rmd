@@ -1,6 +1,7 @@
 ---
 title: "ENE 434 Lab 6 Assignment"
 output: html_document
+authors: 'Ethan McChristian', 'Mitchell Tyse', 'Sebastian Borgen'
 ---
 
 ```{r setup, include=FALSE}
