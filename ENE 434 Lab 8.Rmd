@@ -398,6 +398,8 @@ ggplot(data = pv_df, mapping = aes(x = date, y = cum_cap)) +
 
 ##Question 3
 Now create a prediction model from a GAM estimation for Chinese panels over time. In addition, create a new variable that indicates the share (from 0-1) of Chinese panels among installed solar panels per month. Use this series to create a prediction model (so instead of inputting a column of 0s or 1s to indicate Chinese, or non-Chinese panels, you would put in the series representing the share of panels.) Compare the predictive curve of cost over time with the curve representing non-Chinese panels. What does this tell you about the influence of Chinese panels on the average cost of solar panel systems during this time period?
+
+##setting up prediction for model with only chinese panels on cumulative capacity
 ```{r}
 pdat3 =with(pv_df,
 list(
@@ -425,7 +427,7 @@ pred3_fit["prediction_se"] = rowSums(pred3_se)
 pred3_fit["upper"] = pred3_fit$prediction +  2 * pred3_fit$prediction_se
 pred3_fit["lower"] = pred3_fit$prediction - 2* pred3_fit$prediction_se
 ```
-
+#plotting first only china, then plotting only nonchina to compare the difference
 ```{r}
 ggplot(pred3_fit, aes(x=cum_cap, y=prediction, ymin=upper, ymax=lower))+
     geom_ribbon(alpha=.5, fill="grey") +
@@ -438,10 +440,9 @@ ggplot(pred2_fit, aes(x=cum_cap, y=prediction, ymin=upper, ymax=lower))+
     labs(x="Cumulative Capacity", y="Prediction") +
     theme_bw()
 ```
+If we predict the panels to be only chinese, then they cost less across the whole distribution of time. 
 
-
-
-
+##Appending china ratio column (the hard way)
 ```{r}
 pv_df_alter <- pv_df %>%
   mutate(yearz = year-2007) %>%
@@ -476,8 +477,71 @@ pv_df_ratio <- pv_df_alter2 %>%
   mutate(china_ratio = cum_cap_month_china/total_capacity) %>%
   dplyr::filter(!is.na(china_ratio))
 pv_df_final <- left_join(pv_df_alter, pv_df_ratio, by = 'cum_month')
-pv_df_final
 ```
+
+#creating another gam model using the new china ratio value
+```{r}
+gam_mod3=gam(cost_per_kw ~ s(cum_cap) + 
+    sector +
+    nameplate + 
+    lease +
+    county_year_total_mw +
+     contractor_year_total_mw +
+    incentive_per_kw + 
+    china_ratio, 
+    family=gaussian,
+    data=pv_df_final)
+summary(gam_mod3)
+```
+#setting up prediction with china ratio value rather than china ratio dummy
+```{r}
+pdat4=with(pv_df_final,
+list(
+cum_cap = round(seq(min(cum_cap), max(cum_cap), length = 200)),
+sector = rep("Residential",200),
+nameplate = rep(mean(nameplate), 200),
+county_year_total_mw = rep(mean(county_year_total_mw), 200),
+contractor_year_total_mw = rep(mean(contractor_year_total_mw), 200),
+incentive_per_kw = rep(mean(incentive_per_kw/1000), 200),
+lease = rep(0, 200),
+china_ratio = round(seq(min(china_ratio), max(china_ratio), length = 200))
+))
+
+pred4 = predict(gam_mod3, pdat4, type = "terms", se.fit = TRUE)
+
+pred4_fit = as_tibble(pred4$fit)
+pred4_fit["intercept"] = coef(gam_mod3)[1]
+
+pred4_fit = pred4_fit %>% mutate(prediction = rowSums(.))
+
+pred4_fit["cum_cap"] = with(pv_df, round(seq(min(cum_cap), max(cum_cap), length = 200)))
+
+pred4_se= as_tibble(pred4$se)
+pred4_fit["prediction_se"] = rowSums(pred4_se)
+pred4_fit["upper"] = pred4_fit$prediction +  2 * pred4_fit$prediction_se
+pred4_fit["lower"] = pred4_fit$prediction - 2* pred4_fit$prediction_se
+```
+#graphing first our china ratio prediction, then all china prediction, then nochina prediction to compare the three
+```{r}
+ggplot(pred4_fit, aes(x=cum_cap, y=prediction, ymin=upper, ymax=lower))+
+    geom_ribbon(alpha=.5, fill="grey") +
+    geom_line() + 
+    labs(x="Cumulative Capacity", y="Prediction") +
+    theme_bw()
+ggplot(pred3_fit, aes(x=cum_cap, y=prediction, ymin=upper, ymax=lower))+
+    geom_ribbon(alpha=.5, fill="grey") +
+    geom_line() + 
+    labs(x="Cumulative Capacity", y="Prediction") +
+    theme_bw()
+ggplot(pred2_fit, aes(x=cum_cap, y=prediction, ymin=upper, ymax=lower))+
+    geom_ribbon(alpha=.5, fill="grey") +
+    geom_line() + 
+    labs(x="Cumulative Capacity", y="Prediction") +
+    theme_bw()
+```
+
+All this indicates that chinese panels decreased the cost of soalr panels across the time period. As their market penetration increased, the average price of solar panel installation
+decreased. 
 ##Question 4
 Open ended question: What other questions could you answer with this data set? Show in the form figures, regressions, or other estimations. You could also consider downloading updated data here.
 ```{r}
