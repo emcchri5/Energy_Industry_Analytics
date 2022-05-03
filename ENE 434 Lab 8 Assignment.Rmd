@@ -1,0 +1,388 @@
+---
+title: "ENE 434 Lab 8 Assignment"
+Author: Ethan McChristian
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+#Pre-Assignment Necessesities (included in lab)
+##Loading Packages
+```{r, include = FALSE}
+if (!require('pacman')) install.packages('pacman')
+library(pacman)
+p_load(lubridate, tidyverse, ggmap, mgcv)
+```
+```{r, include = FALSE}
+pv_df= read_csv("http://jmaurit.github.io/analytics/labs/data/pv_df.csv")
+```
+```{r, include = FALSE}
+pv_df["incentive_per_kw"] = pv_df$incentive_amount/pv_df$nameplate
+```
+```{r, include = FALSE}
+pv_df$county_year_total_mw = pv_df$county_year_total/1000
+pv_df$contractor_year_total_mw = pv_df$contractor_year_total/1000
+pv_df$contractor_market_share_perc = pv_df$contractor_market_share*100
+```
+```{r, include = FALSE}
+gam_mod1=gam(cost_per_kw ~ s(time_days) + 
+    sector +
+    nameplate + 
+    county_year_total_mw +
+     contractor_year_total_mw +
+    incentive_per_kw + 
+    lease +
+    china, 
+    family=gaussian,
+    data=pv_df)
+```
+```{r, include = FALSE}
+pdat1 =with(pv_df,
+list(
+time_days = round(seq(min(time_days), max(time_days), length = 200)),
+sector = rep("Residential",200),
+nameplate = rep(mean(nameplate), 200),
+county_year_total_mw = rep(mean(county_year_total_mw), 200),
+contractor_year_total_mw = rep(mean(contractor_year_total_mw), 200),
+incentive_per_kw = rep(mean(incentive_per_kw/1000), 200),
+lease = rep(0, 200),
+china = rep(0, 200)
+))
+```
+```{r, include = FALSE}
+pred1 = predict(gam_mod1, pdat1, type = "terms", se.fit = TRUE)
+
+pred1_fit = as_tibble(pred1$fit)
+pred1_fit["intercept"] = coef(gam_mod1)[1]
+
+pred1_fit = pred1_fit %>% mutate(prediction = rowSums(.))
+
+pred1_fit["days"] = with(pv_df, round(seq(min(time_days), max(time_days), length = 200)))
+
+```
+```{r, include = FALSE}
+pred1_se= as_tibble(pred1$se)
+pred1_fit["prediction_se"] = rowSums(pred1_se)
+pred1_fit["upper"] = pred1_fit$prediction +  2 * pred1_fit$prediction_se
+pred1_fit["lower"] = pred1_fit$prediction - 2* pred1_fit$prediction_se
+
+```
+## In the lab, we did the following necessary activites: Loaded data, created incentive per kw column,changed to MW instead of kw, and estimated and predicted with first gam model.
+#Assignment
+##Question 1
+Can you create the variables zip_year_total_mw, that is, the cumulative amount of capacity in each zip code (a finer geographic division than county). Chart the relationship between total installed capacity in a year and costs at the zip level. Include zip_year_total_mw in the linear model instead of county_year_total_mw. Are the estimated results substantially different?
+```{r}
+zip_sum <- pv_df %>% group_by(zip, year) %>%
+  summarize(
+    zip_year_total_mw = sum(nameplate)
+  )
+
+pv_df_zip <- left_join(pv_df,zip_sum,by=c('zip','year'))
+##changing to MW instead of kw
+
+pv_df_zip$zip_year_total_mw = pv_df$county_year_total/1000
+pv_df_zip$contractor_year_total_mw = pv_df$contractor_year_total/1000
+pv_df_zip$contractor_market_share_perc = pv_df$contractor_market_share*100
+
+lm_mod2 = lm(cost_per_kw ~ date + 
+  county +
+    sector +
+    nameplate + 
+    zip_year_total_mw +
+    incentive_per_kw + 
+    contractor_year_total_mw +
+    lease +
+  china,
+    data=pv_df_zip)
+
+summary(lm_mod2)
+```
+
+```{r}
+zip_data = pv_df %>% group_by(zip, year) %>% summarise(
+  avg_zip_cost = mean(cost_per_kw, na.rm=TRUE),
+  avg_zip_cost_less_sub = mean(cost_ex_subsid_per_kw, na.rm=TRUE),
+  zip_year_total = sum(nameplate, na.rm=TRUE),
+  zip_lat = mean(latitude, na.rm=TRUE), 
+  zip_long = mean(longitude, na.rm=TRUE),
+  cost_per_capacity = avg_zip_cost/zip_year_total
+)
+```
+###setting up ggmaps
+```{r, include = FALSE}
+p_load(ggmap, gganimate, gifski)
+maps_api_key = 'AIzaSyB1TvdPs2K9NvWZCazg9yJmEd5L5SxxAds'
+register_google(key = maps_api_key)
+```
+
+###loading in calfornia map, animating to show change over time
+```{r}
+california=get_map(location = c(lon = -119, lat = 36), zoom=6, maptype="roadmap")
+map_with_data = ggmap(california) + geom_point(data=zip_data, aes(x=zip_long, y = zip_lat, size =zip_year_total, color = avg_zip_cost))
+
+map_with_animation <- map_with_data +
+  transition_time(zip_data$year) +
+  ggtitle('Year:{frame_time}',
+          subtitle = 'Frame {frame} of {nframes})')
+          
+num_years = max(zip_data$year) - min(zip_data$year) + 1
+animate(map_with_animation, nframes = num_years, fps = 1)
+anim_save('Zip_data_animation')
+```
+
+##Question 2
+In lab 7 we used cumulative capacity to model learning curves. In this lab we used days/dates to model change of prices over time. Run regressions (linear and semi-parametric (GAM)) where you use cumulative capacity instead of days/date to model the effects over time. For the semi-parametric model, create a prediction and compare with the results in the lab. Are the results substantially different?
+#creating a cumulative capacity value and using this in a linear model
+```{r}
+pv_df = pv_df %>% arrange(date) %>% mutate(
+  cum_cap = cumsum(nameplate)
+)
+
+lm_mod3 = lm(cost_per_kw ~ cum_cap + 
+  county +
+    sector +
+    nameplate + 
+    county_year_total_mw +
+     contractor_year_total_mw +
+    incentive_per_kw + 
+    lease +
+  china,
+    data=pv_df)
+
+summary(lm_mod2)
+```
+#doing a gam model with the cumulative capacity value
+```{r}
+gam_mod2=gam(cost_per_kw ~ s(cum_cap) + 
+    sector +
+    nameplate + 
+    lease +
+    county_year_total_mw +
+     contractor_year_total_mw +
+    incentive_per_kw + 
+    china, 
+    family=gaussian,
+    data=pv_df)
+summary(gam_mod2)
+```
+#setting up test dataset and predicting with previous gam model
+```{r}
+pdat2 =with(pv_df,
+list(
+cum_cap = round(seq(min(cum_cap), max(cum_cap), length = 200)),
+sector = rep("Residential",200),
+nameplate = rep(mean(nameplate), 200),
+county_year_total_mw = rep(mean(county_year_total_mw), 200),
+contractor_year_total_mw = rep(mean(contractor_year_total_mw), 200),
+incentive_per_kw = rep(mean(incentive_per_kw/1000), 200),
+lease = rep(0, 200),
+china = rep(0, 200)
+))
+
+pred2 = predict(gam_mod2, pdat2, type = "terms", se.fit = TRUE)
+
+pred2_fit = as_tibble(pred2$fit)
+pred2_fit["intercept"] = coef(gam_mod2)[1]
+
+pred2_fit = pred2_fit %>% mutate(prediction = rowSums(.))
+
+pred2_fit["cum_cap"] = with(pv_df, round(seq(min(cum_cap), max(cum_cap), length = 200)))
+
+pred2_se= as_tibble(pred2$se)
+pred2_fit["prediction_se"] = rowSums(pred2_se)
+pred2_fit["upper"] = pred2_fit$prediction +  2 * pred2_fit$prediction_se
+pred2_fit["lower"] = pred2_fit$prediction - 2* pred2_fit$prediction_se
+```
+#plotting cumulative capacity gam model as well as time gam model and comparing
+```{r}
+ggplot(pred2_fit, aes(x=cum_cap, y=prediction, ymin=upper, ymax=lower))+
+    geom_ribbon(alpha=.5, fill="grey") +
+    geom_line() + 
+    labs(x="Cumulative Capacity", y="Prediction") +
+    theme_bw()
+ggplot(pred1_fit, aes(x=days, y=prediction, ymin=upper, ymax=lower))+
+    geom_ribbon(alpha=.5, fill="grey") +
+    geom_line() + 
+    labs(x="Days since 1.1.2006", y="Prediction") +
+    theme_bw() 
+```
+The results appear different, but when taken into account with exponential increase in cumulative capacity over time, the graphs are saying the same thing! The graph below depicts capacity over time
+#plotting cumulative capacity over time
+```{r}
+ggplot(data = pv_df, mapping = aes(x = date, y = cum_cap)) +
+  geom_line()
+```
+
+##Question 3
+Now create a prediction model from a GAM estimation for Chinese panels over time. In addition, create a new variable that indicates the share (from 0-1) of Chinese panels among installed solar panels per month. Use this series to create a prediction model (so instead of inputting a column of 0s or 1s to indicate Chinese, or non-Chinese panels, you would put in the series representing the share of panels.) Compare the predictive curve of cost over time with the curve representing non-Chinese panels. What does this tell you about the influence of Chinese panels on the average cost of solar panel systems during this time period?
+
+##setting up prediction for model with only chinese panels on cumulative capacity
+```{r}
+pdat3 =with(pv_df,
+list(
+cum_cap = round(seq(min(cum_cap), max(cum_cap), length = 200)),
+sector = rep("Residential",200),
+nameplate = rep(mean(nameplate), 200),
+county_year_total_mw = rep(mean(county_year_total_mw), 200),
+contractor_year_total_mw = rep(mean(contractor_year_total_mw), 200),
+incentive_per_kw = rep(mean(incentive_per_kw/1000), 200),
+lease = rep(0, 200),
+china = rep(1, 200)
+))
+
+pred3 = predict(gam_mod2, pdat3, type = "terms", se.fit = TRUE)
+
+pred3_fit = as_tibble(pred3$fit)
+pred3_fit["intercept"] = coef(gam_mod2)[1]
+
+pred3_fit = pred3_fit %>% mutate(prediction = rowSums(.))
+
+pred3_fit["cum_cap"] = with(pv_df, round(seq(min(cum_cap), max(cum_cap), length = 200)))
+
+pred3_se= as_tibble(pred3$se)
+pred3_fit["prediction_se"] = rowSums(pred3_se)
+pred3_fit["upper"] = pred3_fit$prediction +  2 * pred3_fit$prediction_se
+pred3_fit["lower"] = pred3_fit$prediction - 2* pred3_fit$prediction_se
+```
+#plotting first only china, then plotting only nonchina to compare the difference
+```{r}
+ggplot(pred3_fit, aes(x=cum_cap, y=prediction, ymin=upper, ymax=lower))+
+    geom_ribbon(alpha=.5, fill="grey") +
+    geom_line() + 
+    labs(x="Cumulative Capacity", y="Prediction") +
+  ggtitle('Predictions assuming China panels') +
+    theme_bw()
+ggplot(pred2_fit, aes(x=cum_cap, y=prediction, ymin=upper, ymax=lower))+
+    geom_ribbon(alpha=.5, fill="grey") +
+    geom_line() + 
+    labs(x="Cumulative Capacity", y="Prediction") +
+  ggtitle('Predictions assuming non-China panels') +
+    theme_bw()
+```
+If we predict the panels to be only chinese, then they cost less across the whole distribution of time. 
+
+##Appending china ratio column (the hard way)
+```{r}
+pv_df_alter <- pv_df %>%
+  mutate(yearz = year-2007) %>%
+  mutate(cum_month = (yearz)*12 + month)
+pv_df_alter2 <- pv_df_alter %>%
+  group_by(cum_month) %>%
+  summarize(
+    total_capacity = sum(cum_cap, na.rm = TRUE)
+  ) %>%
+  arrange(cum_month)
+#pv_df_alter_simple <- pv_df_alter %>%
+  #select(cum_month) %>%
+  #distinct()
+pv_df_alter2[nrow(pv_df_alter2)+1,] <- 1
+pv_df_alter2[nrow(pv_df_alter2)+1,] <- 3
+pv_df_alter2[nrow(pv_df_alter2)+1,] <- 4
+pv_df_alter2 <- pv_df_alter2 %>%
+  add_column(cum_cap_month_china = 0)
+#for (i in 1:max(pv_df_alter$cum_month)) {
+#  dataset <- pv_df_alter %>%
+#    filter(cum_month==i)
+#  pv_df_alter2$cum_cap_month[i] = sum(dataset$nameplate, na.rm=TRUE)
+#}
+
+for (i in 1:max(pv_df_alter$cum_month)) {
+  dataset <- pv_df_alter %>%
+    dplyr::filter(cum_month==i) %>%
+    dplyr::filter(china == 1)
+  pv_df_alter2$cum_cap_month_china[i] = sum(dataset$nameplate, na.rm = TRUE)
+}
+pv_df_ratio <- pv_df_alter2 %>%
+  mutate(china_ratio = cum_cap_month_china/total_capacity) %>%
+  dplyr::filter(!is.na(china_ratio))
+pv_df_final <- left_join(pv_df_alter, pv_df_ratio, by = 'cum_month')
+```
+
+#creating another gam model using the new china ratio value
+```{r}
+gam_mod3=gam(cost_per_kw ~ s(cum_cap) + 
+    sector +
+    nameplate + 
+    lease +
+    county_year_total_mw +
+     contractor_year_total_mw +
+    incentive_per_kw + 
+    china_ratio, 
+    family=gaussian,
+    data=pv_df_final)
+summary(gam_mod3)
+```
+#setting up prediction with china ratio value rather than china ratio dummy
+```{r}
+pdat4=with(pv_df_final,
+list(
+cum_cap = round(seq(min(cum_cap), max(cum_cap), length = 200)),
+sector = rep("Residential",200),
+nameplate = rep(mean(nameplate), 200),
+county_year_total_mw = rep(mean(county_year_total_mw), 200),
+contractor_year_total_mw = rep(mean(contractor_year_total_mw), 200),
+incentive_per_kw = rep(mean(incentive_per_kw/1000), 200),
+lease = rep(0, 200),
+china_ratio = round(seq(min(china_ratio), max(china_ratio), length = 200))
+))
+
+pred4 = predict(gam_mod3, pdat4, type = "terms", se.fit = TRUE)
+
+pred4_fit = as_tibble(pred4$fit)
+pred4_fit["intercept"] = coef(gam_mod3)[1]
+
+pred4_fit = pred4_fit %>% mutate(prediction = rowSums(.))
+
+pred4_fit["cum_cap"] = with(pv_df, round(seq(min(cum_cap), max(cum_cap), length = 200)))
+
+pred4_se= as_tibble(pred4$se)
+pred4_fit["prediction_se"] = rowSums(pred4_se)
+pred4_fit["upper"] = pred4_fit$prediction +  2 * pred4_fit$prediction_se
+pred4_fit["lower"] = pred4_fit$prediction - 2* pred4_fit$prediction_se
+```
+#graphing first our china ratio prediction, then all china prediction, then nochina prediction to compare the three
+```{r}
+
+ggplot(pred4_fit, aes(x=cum_cap, y=prediction, ymin=upper, ymax=lower))+
+    geom_ribbon(alpha=.5, fill="grey") +
+    geom_line() + 
+    labs(x="Cumulative Capacity", y="Prediction") +
+  ggtitle('Predictions with a ratio rather than categorical') +
+    theme_bw()
+ggplot(pred3_fit, aes(x=cum_cap, y=prediction, ymin=upper, ymax=lower))+
+    geom_ribbon(alpha=.5, fill="grey") +
+    geom_line() + 
+    labs(x="Cumulative Capacity", y="Prediction") +
+  ggtitle('Predictions assuming China panels') +
+    theme_bw()
+ggplot(pred2_fit, aes(x=cum_cap, y=prediction, ymin=upper, ymax=lower))+
+    geom_ribbon(alpha=.5, fill="grey") +
+    geom_line() + 
+    labs(x="Cumulative Capacity", y="Prediction") +
+  ggtitle('Predictions assuming non-China panels') +
+    theme_bw()
+```
+###All three plotted together
+```{r}
+colors <- c("Non-Chinese Only" = "blue", "Ratio of Chinese" = "red", "Chinese Only" = "green")
+ggplot() +
+  geom_line(aes(x=cum_cap, y = prediction, ymin = upper, ymax = lower, color = 'Ratio of Chinese'), data = pred4_fit) +
+  geom_ribbon(aes(ymin=lower, ymax=upper, x=cum_cap, fill = "band"), alpha = 0.3, data = pred4_fit, color = 'grey', fill = 'grey') +
+  geom_line(aes(x=cum_cap, y = prediction, ymin = upper, ymax = lower, color = 'Non-Chinese Only'), data = pred3_fit) +
+  geom_ribbon(aes(ymin=lower, ymax=upper, x=cum_cap, fill = "band"), alpha = 0.3, data = pred3_fit, fill = 'grey') +
+  geom_line(aes(x=cum_cap, y = prediction, ymin = upper, ymax = lower, color = 'Chinese Only'), data = pred2_fit) +
+  geom_ribbon(aes(ymin=lower, ymax=upper, x=cum_cap, fill = "band"), alpha = 0.3, data = pred2_fit, color = 'grey', fill = 'grey') +
+    theme_bw() +
+  labs(color = "legend") +
+  scale_color_manual(values = colors)
+```
+
+All this indicates that chinese panels decreased the cost of soalr panels across the time period. As their market penetration increased, the average price of solar panel installation
+decreased. 
+##Question 4
+Open ended question: What other questions could you answer with this data set? Show in the form figures, regressions, or other estimations. You could also consider downloading updated data here.
+```{r}
+
+```
+
