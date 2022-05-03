@@ -59,7 +59,7 @@ county2014 %>% ggplot(aes(x=county_year_total, y=avg_county_cost)) + geom_point(
 ##setting up ggmaps
 ```{r, include = FALSE}
 p_load(ggmap)
-maps_api_key = 'AIzaSyCJE2Iu_uSThzAzDh9koS9lrFLtTJQXzFk'
+maps_api_key = 'key'
 register_google(key = maps_api_key)
 ```
 
@@ -295,7 +295,7 @@ zip_data = pv_df %>% group_by(zip, year) %>% summarise(
 ###setting up ggmaps
 ```{r, include = FALSE}
 p_load(ggmap, gganimate, gifski)
-maps_api_key = 'AIzaSyCJE2Iu_uSThzAzDh9koS9lrFLtTJQXzFk'
+maps_api_key = 'key'
 register_google(key = maps_api_key)
 ```
 
