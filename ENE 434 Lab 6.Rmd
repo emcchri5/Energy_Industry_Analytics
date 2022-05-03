@@ -117,7 +117,6 @@ cons = cons %>% rows_delete(dupRow, by=c("period", "NO"))
 
 ###tsibble and preview
 ```{r}
-cons
 cons_ts = cons %>% select("NO1":"period") %>% tsibble(index=period)
 cons_ts %>% select(NO) %>% autoplot()
 ```
@@ -164,6 +163,7 @@ smod2 %>%
     aes(x = as_datetime("2019-10-01 00:00:00"), y = 20000, label = paste0("AICc = ", format(AICc))),
     data = glance(smod2)
   )
+?ARIMA
 ```
 ###looking at fmod8 closer
 ```{r}

@@ -1,0 +1,41 @@
+---
+title: "projectsilje"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+if (!require('pacman')) install.packages('pacman')
+library(pacman)
+p_load(devtools, tidyverse, lubridate, coronavirus)
+```
+
+```{r}
+data <- read.csv('https://raw.githubusercontent.com/emcchri5/codebank/main/M%C3%B8re__og__Romsdal.csv')
+```
+
+```{r}
+data
+knn=function(x0,x,y,K=10){
+  d=abs(x-x0)
+  o=order(d)[1:K]
+  ypred=mean(y[o])
+  return(ypred)
+}
+data$expected_category <- 0
+data$expected_categor <- 0
+for (i in 1:nrow(data)){
+  n <- (knn(data$Mean_high_wind[i],data$Mean_high_wind,data$Category,K=10))
+  m <- ifelse(n<.5, 0, 1)
+  data$expected_category[i] <- m
+  data$expected_categor[i] <- n
+  n <- 0
+  m <- 0
+  }
+data
+sum(data$expected_category)/nrow(data)
+```
+
