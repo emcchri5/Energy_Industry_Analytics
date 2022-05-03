@@ -72,6 +72,7 @@ pred1_fit["lower"] = pred1_fit$prediction - 2* pred1_fit$prediction_se
 #Assignment
 ##Question 1
 Can you create the variables zip_year_total_mw, that is, the cumulative amount of capacity in each zip code (a finer geographic division than county). Chart the relationship between total installed capacity in a year and costs at the zip level. Include zip_year_total_mw in the linear model instead of county_year_total_mw. Are the estimated results substantially different?
+###creating zipsum columns
 ```{r}
 zip_sum <- pv_df %>% group_by(zip, year) %>%
   summarize(
@@ -98,7 +99,7 @@ lm_mod2 = lm(cost_per_kw ~ date +
 
 summary(lm_mod2)
 ```
-
+###creating zipdata for ggmaps to use
 ```{r}
 zip_data = pv_df %>% group_by(zip, year) %>% summarise(
   avg_zip_cost = mean(cost_per_kw, na.rm=TRUE),
@@ -133,7 +134,7 @@ anim_save('Zip_data_animation')
 
 ##Question 2
 In lab 7 we used cumulative capacity to model learning curves. In this lab we used days/dates to model change of prices over time. Run regressions (linear and semi-parametric (GAM)) where you use cumulative capacity instead of days/date to model the effects over time. For the semi-parametric model, create a prediction and compare with the results in the lab. Are the results substantially different?
-#creating a cumulative capacity value and using this in a linear model
+###creating a cumulative capacity value and using this in a linear model
 ```{r}
 pv_df = pv_df %>% arrange(date) %>% mutate(
   cum_cap = cumsum(nameplate)
@@ -152,7 +153,7 @@ lm_mod3 = lm(cost_per_kw ~ cum_cap +
 
 summary(lm_mod2)
 ```
-#doing a gam model with the cumulative capacity value
+###doing a gam model with the cumulative capacity value
 ```{r}
 gam_mod2=gam(cost_per_kw ~ s(cum_cap) + 
     sector +
@@ -166,7 +167,7 @@ gam_mod2=gam(cost_per_kw ~ s(cum_cap) +
     data=pv_df)
 summary(gam_mod2)
 ```
-#setting up test dataset and predicting with previous gam model
+###setting up test dataset and predicting with previous gam model
 ```{r}
 pdat2 =with(pv_df,
 list(
@@ -194,7 +195,7 @@ pred2_fit["prediction_se"] = rowSums(pred2_se)
 pred2_fit["upper"] = pred2_fit$prediction +  2 * pred2_fit$prediction_se
 pred2_fit["lower"] = pred2_fit$prediction - 2* pred2_fit$prediction_se
 ```
-#plotting cumulative capacity gam model as well as time gam model and comparing
+###plotting cumulative capacity gam model as well as time gam model and comparing
 ```{r}
 ggplot(pred2_fit, aes(x=cum_cap, y=prediction, ymin=upper, ymax=lower))+
     geom_ribbon(alpha=.5, fill="grey") +
@@ -208,7 +209,7 @@ ggplot(pred1_fit, aes(x=days, y=prediction, ymin=upper, ymax=lower))+
     theme_bw() 
 ```
 The results appear different, but when taken into account with exponential increase in cumulative capacity over time, the graphs are saying the same thing! The graph below depicts capacity over time
-#plotting cumulative capacity over time
+###plotting cumulative capacity over time
 ```{r}
 ggplot(data = pv_df, mapping = aes(x = date, y = cum_cap)) +
   geom_line()
@@ -217,7 +218,7 @@ ggplot(data = pv_df, mapping = aes(x = date, y = cum_cap)) +
 ##Question 3
 Now create a prediction model from a GAM estimation for Chinese panels over time. In addition, create a new variable that indicates the share (from 0-1) of Chinese panels among installed solar panels per month. Use this series to create a prediction model (so instead of inputting a column of 0s or 1s to indicate Chinese, or non-Chinese panels, you would put in the series representing the share of panels.) Compare the predictive curve of cost over time with the curve representing non-Chinese panels. What does this tell you about the influence of Chinese panels on the average cost of solar panel systems during this time period?
 
-##setting up prediction for model with only chinese panels on cumulative capacity
+###setting up prediction for model with only chinese panels on cumulative capacity
 ```{r}
 pdat3 =with(pv_df,
 list(
@@ -245,7 +246,7 @@ pred3_fit["prediction_se"] = rowSums(pred3_se)
 pred3_fit["upper"] = pred3_fit$prediction +  2 * pred3_fit$prediction_se
 pred3_fit["lower"] = pred3_fit$prediction - 2* pred3_fit$prediction_se
 ```
-#plotting first only china, then plotting only nonchina to compare the difference
+###plotting first only china, then plotting only nonchina to compare the difference
 ```{r}
 ggplot(pred3_fit, aes(x=cum_cap, y=prediction, ymin=upper, ymax=lower))+
     geom_ribbon(alpha=.5, fill="grey") +
@@ -262,7 +263,7 @@ ggplot(pred2_fit, aes(x=cum_cap, y=prediction, ymin=upper, ymax=lower))+
 ```
 If we predict the panels to be only chinese, then they cost less across the whole distribution of time. 
 
-##Appending china ratio column (the hard way)
+###Appending china ratio column (the hard way)
 ```{r}
 pv_df_alter <- pv_df %>%
   mutate(yearz = year-2007) %>%
@@ -299,7 +300,7 @@ pv_df_ratio <- pv_df_alter2 %>%
 pv_df_final <- left_join(pv_df_alter, pv_df_ratio, by = 'cum_month')
 ```
 
-#creating another gam model using the new china ratio value
+###creating another gam model using the new china ratio value
 ```{r}
 gam_mod3=gam(cost_per_kw ~ s(cum_cap) + 
     sector +
@@ -313,7 +314,7 @@ gam_mod3=gam(cost_per_kw ~ s(cum_cap) +
     data=pv_df_final)
 summary(gam_mod3)
 ```
-#setting up prediction with china ratio value rather than china ratio dummy
+###setting up prediction with china ratio value rather than china ratio dummy
 ```{r}
 pdat4=with(pv_df_final,
 list(
@@ -341,7 +342,7 @@ pred4_fit["prediction_se"] = rowSums(pred4_se)
 pred4_fit["upper"] = pred4_fit$prediction +  2 * pred4_fit$prediction_se
 pred4_fit["lower"] = pred4_fit$prediction - 2* pred4_fit$prediction_se
 ```
-#graphing first our china ratio prediction, then all china prediction, then nochina prediction to compare the three
+###graphing first our china ratio prediction, then all china prediction, then nochina prediction to compare the three
 ```{r}
 
 ggplot(pred4_fit, aes(x=cum_cap, y=prediction, ymin=upper, ymax=lower))+
@@ -382,7 +383,58 @@ All this indicates that chinese panels decreased the cost of soalr panels across
 decreased. 
 ##Question 4
 Open ended question: What other questions could you answer with this data set? Show in the form figures, regressions, or other estimations. You could also consider downloading updated data here.
-```{r}
 
+###Answer
+There's a lot of information on incentives in this dataset, so it'd be interesting to look at some of this data. A super prude look would be:
+```{r}
+pv_df_final %>% group_by(cum_month) %>%
+  summarize(
+    incentive_total = sum(incentive_amount, na.rm=TRUE),
+    new_nameplate = sum(nameplate, na.rm = TRUE)
+  ) %>%
+  mutate(incentive_total_transformed = max(new_nameplate)/max(incentive_total)*incentive_total) %>%
+  ggplot() +
+  geom_line(aes(x = cum_month, y = incentive_total_transformed), color = 'red') +
+  geom_line(aes(x = cum_month, y = new_nameplate), color = 'blue')
+```
+Here we looked at monthly incentives (transformed to be in the same range as nameplate capacity) and nameplate capacity. We can see there is quite precise correlation, as one would expect. However, there are some interesting deviations that 50 months in where people are installing without incentives, then a huge spike ~80 months in. 
+
+There's also manufacturer and contractor data that would be interesting to look at! 
+```{r}
+average_cost <- pv_df_final %>% group_by(cum_month) %>%
+  summarize(avg_cost = mean(cost_per_kw))
+nation_data <- pv_df_final %>% group_by(nationality, cum_month) %>%
+  summarize(
+    avg_cost = mean(cost_per_kw)
+  )
+ggplot() +
+geom_line(aes(x = cum_month, y = avg_cost), data = average_cost) +
+geom_line(mapping = aes(x = cum_month, y = avg_cost, color = nationality), data = nation_data, alpha = .5)
 ```
 
+There's a bunch of fun stuff to look at here, but I have a feeling some of the high's and lows are due to limited data in those periods. 
+
+```{r}
+pv_df %>%
+  ggplot(mapping = aes(x = contractor_market_share_perc, y = cost_per_kw)) +
+  geom_point(alpha = .007) +
+  scale_y_continuous(limits = c(0,20000))
+```
+
+This is not that interesting, but could warrant a little extra investigation: are there no economies of scale in solar panel installation?
+```{r}
+pv_df_final %>%
+  group_by(cum_month) %>%
+  summarize(
+    cost_sub = mean(cost_ex_subsid_per_kw, na.rm=TRUE),
+    cost = mean(cost_per_kw, na.rm=TRUE)
+  ) %>%
+  ggplot() +
+  geom_line(aes(x = cum_month, y = cost_sub), color = 'green') +
+  geom_line(aes(x = cum_month, y = cost), color = 'red')
+```
+This one is pretty straightforward, just looking at the significance of subsidies over time. They're not as large as they once were! 
+
+##End Note
+
+Thank you for a great class, it was a lot of fun and the assignments were some of the most relevant assignments I've ever done. HAGS -Ethan
