@@ -273,8 +273,8 @@ dupRow = duplicates(DAN_2020)[2,]
 DAN_2020 = DAN_2020 %>% rows_delete(dupRow, by=c("period", 'total_load'))
 DAN_2020 <- DAN_2020 %>%
   tsibble(index = 'period')
-DAN_2020 %>% select(total_load) %>% autoplot() #I can't perform filters on this tsibble format... also our 95% confidence interval didn't work for January. I think it's safe to say we've failed this question. Where did we go wrong? Why is our prediction flat? How are these predictions supposed to look? Maybe a phone call/zoom meeting/etc. could help clear this up. I'm not exactly sure how submissions work in this class and how big of a deal this inadequacy is, but we hope that this can be a learning opportunity rather than a learning hindrance!
+DAN_2020 %>% select(total_load) %>% autoplot() 
 ```
- 
+I can't perform filters on this tsibble format... also our 95% confidence interval didn't work for January. I think it's safe to say we've failed this question. Where did we go wrong? Why is our prediction flat? How are these predictions supposed to look? Maybe a phone call/zoom meeting/etc. could help clear this up. I'm not exactly sure how submissions work in this class and how big of a deal this inadequacy is, but we hope that this can be a learning opportunity rather than a learning hindrance!
 
 
