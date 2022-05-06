@@ -1,7 +1,11 @@
 ---
 title: "ENE 434 Lab 8 Assignment"
 Author: Ethan McChristian
-output: pdf_document
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+  word_document: default
 ---
 
 ```{r setup, include=FALSE}
@@ -12,7 +16,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ```{r, include = FALSE}
 if (!require('pacman')) install.packages('pacman')
 library(pacman)
-p_load(lubridate, tidyverse, ggmap, mgcv)
+p_load(lubridate, tidyverse, ggmap, mgcv, knitr)
 ```
 ```{r, include = FALSE}
 pv_df= read_csv("http://jmaurit.github.io/analytics/labs/data/pv_df.csv")
@@ -112,25 +116,33 @@ zip_data = pv_df %>% group_by(zip, year) %>% summarise(
 ```
 ###setting up ggmaps
 ```{r, include = FALSE}
+maps_api_key = 'AIzaSyD8cGWX-Os-P1L6eCPTRGExQdYLaYGe2IY'
+```
+excluding "maps_api_key = '____' ^^
+```{r}
 p_load(ggmap, gganimate, gifski)
-maps_api_key = 'API key'
 register_google(key = maps_api_key)
 ```
 
 ###loading in calfornia map, animating to show change over time
-```{r}
-california=get_map(location = c(lon = -119, lat = 36), zoom=6, maptype="roadmap")
-map_with_data = ggmap(california) + geom_point(data=zip_data, aes(x=zip_long, y = zip_lat, size =zip_year_total, color = avg_zip_cost))
+This part is excluded and the gif is attached so that the file would knit! 
+```{r include = FALSE}
+#california=get_map(location = c(lon = -119, lat = 36), zoom=6, maptype="roadmap")
+#map_with_data = ggmap(california) + geom_point(data=zip_data, aes(x=zip_long, y = zip_lat, size =zip_year_total, color = avg_zip_cost))
 
-map_with_animation <- map_with_data +
-  transition_time(zip_data$year) +
-  ggtitle('Year:{frame_time}',
-          subtitle = 'Frame {frame} of {nframes})')
+#map_with_animation <- map_with_data +
+#  transition_time(zip_data$year) +
+#  ggtitle('Year:{frame_time}',
+#          subtitle = 'Frame {frame} of {nframes})')
           
-num_years = max(zip_data$year) - min(zip_data$year) + 1
-animate(map_with_animation, nframes = num_years, fps = 1)
-anim_save('Zip_data_animation')
+#num_years = max(zip_data$year) - min(zip_data$year) + 1
+#animate_object <- animate(map_with_animation, nframes = num_years, fps = 1)
+#anim_save('Zip_data_animation.gif', animate_object)
 ```
+```{r}
+#print(animate_object)
+```
+
 
 ##Question 2
 In lab 7 we used cumulative capacity to model learning curves. In this lab we used days/dates to model change of prices over time. Run regressions (linear and semi-parametric (GAM)) where you use cumulative capacity instead of days/date to model the effects over time. For the semi-parametric model, create a prediction and compare with the results in the lab. Are the results substantially different?
