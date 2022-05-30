@@ -116,7 +116,7 @@ zip_data = pv_df %>% group_by(zip, year) %>% summarise(
 ```
 ###setting up ggmaps
 ```{r, include = FALSE}
-maps_api_key = 'AIzaSyD8cGWX-Os-P1L6eCPTRGExQdYLaYGe2IY'
+maps_api_key = 'my key'
 ```
 excluding "maps_api_key = '____' ^^
 ```{r}

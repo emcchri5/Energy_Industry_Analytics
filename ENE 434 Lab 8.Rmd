@@ -255,7 +255,6 @@ ggplot(pred1_fit, aes(x=days, y=prediction, ymin=upper, ymax=lower))+
 ##Question 1
 Can you create the variables zip_year_total_mw, that is, the cumulative amount of capacity in each zip code (a finer geographic division than county). Chart the relationship between total installed capacity in a year and costs at the zip level. Include zip_year_total_mw in the linear model instead of county_year_total_mw. Are the estimated results substantially different?
 ```{r}
-
 zip_sum <- pv_df %>% group_by(zip, year) %>%
   summarize(
     zip_year_total_mw = sum(nameplate)
@@ -316,6 +315,7 @@ anim_save('Zip_data_animation')
 
 ##Question 2
 In lab 7 we used cumulative capacity to model learning curves. In this lab we used days/dates to model change of prices over time. Run regressions (linear and semi-parametric (GAM)) where you use cumulative capacity instead of days/date to model the effects over time. For the semi-parametric model, create a prediction and compare with the results in the lab. Are the results substantially different?
+#creating a cumulative capacity value and using this in a linear model
 ```{r}
 pv_df = pv_df %>% arrange(date) %>% mutate(
   cum_cap = cumsum(nameplate)
@@ -334,7 +334,7 @@ lm_mod3 = lm(cost_per_kw ~ cum_cap +
 
 summary(lm_mod2)
 ```
-
+#doing a gam model with the cumulative capacity value
 ```{r}
 gam_mod2=gam(cost_per_kw ~ s(cum_cap) + 
     sector +
@@ -348,7 +348,7 @@ gam_mod2=gam(cost_per_kw ~ s(cum_cap) +
     data=pv_df)
 summary(gam_mod2)
 ```
-
+#setting up test dataset and predicting with previous gam model
 ```{r}
 pdat2 =with(pv_df,
 list(
@@ -376,7 +376,7 @@ pred2_fit["prediction_se"] = rowSums(pred2_se)
 pred2_fit["upper"] = pred2_fit$prediction +  2 * pred2_fit$prediction_se
 pred2_fit["lower"] = pred2_fit$prediction - 2* pred2_fit$prediction_se
 ```
-
+#plotting cumulative capacity gam model as well as time gam model and comparing
 ```{r}
 ggplot(pred2_fit, aes(x=cum_cap, y=prediction, ymin=upper, ymax=lower))+
     geom_ribbon(alpha=.5, fill="grey") +
@@ -390,7 +390,7 @@ ggplot(pred1_fit, aes(x=days, y=prediction, ymin=upper, ymax=lower))+
     theme_bw() 
 ```
 The results appear different, but when taken into account with exponential increase in cumulative capacity over time, the graphs are saying the same thing! The graph below depicts capacity over time
-
+#plotting cumulative capacity over time
 ```{r}
 ggplot(data = pv_df, mapping = aes(x = date, y = cum_cap)) +
   geom_line()
