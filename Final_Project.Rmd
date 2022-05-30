@@ -1,0 +1,7 @@
+---
+title: "Final_Project"
+author: "Ethan McChristian"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
